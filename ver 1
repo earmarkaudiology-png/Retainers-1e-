@@ -1,0 +1,3852 @@
+/*
+ * RetainerManager.js
+ * AD&D 1e henchmen and hirelings helper for Roll20
+ * Version 1.0.1
+ */
+
+var RetainerManager = RetainerManager || (function () {
+    'use strict';
+
+    var SCRIPT = 'RetainerManager';
+    var VERSION = '1.0.5';
+    var STATE = 'RETAINER_MANAGER';
+
+    var ATTR = {
+        RETAINER_TYPE: 'retainer_type',
+        RETAINER_SUBTYPE: 'retainer_subtype',
+        EMPLOYER_ID: 'employer_character_id',
+        EMPLOYER_NAME: 'employer_character_name',
+        EMPLOYER_PLAYER_ID: 'employer_player_id',
+        HIRE_METHOD: 'hire_method',
+        STATUS: 'retainer_status',
+        DAILY_WAGE_SP: 'daily_wage_sp',
+        MONTHLY_WAGE_GP: 'monthly_wage_gp',
+        WAGE_SOURCE: 'wage_source',
+        INITIAL_PAYMENT: 'initial_payment_gp',
+        TREASURE_SHARE_PCT: 'treasure_share_pct',
+        SHARE_CATEGORY: 'treasure_share_category',
+        MAGIC_DIVISION: 'magic_division_notes',
+        QUARTERS_SUPPORT: 'quarters_and_support',
+        EQUIPMENT: 'equipment_notes',
+        MAGIC_ITEMS: 'magic_items_offered_count',
+        ASSIGNMENT: 'assignment',
+        LOYALTY_BASE: 'loyalty_base',
+        LOYALTY_CURRENT: 'loyalty_current',
+        LOYALTY_NOTES: 'loyalty_notes',
+        DM_MOD: 'dm_offer_modifier',
+        DM_REASON: 'dm_offer_modifier_reason',
+        OFFER_NOTES: 'offer_notes',
+        RETAINER_XP_MODE: 'retainer_xp_mode',
+        NPC_LEVEL: 'npc_level',
+        NPC_CLASS: 'npc_class',
+        NPC_RACE: 'npc_race',
+        CONTRACT_DAYS: 'contract_days',
+        PAY_PERIOD: 'pay_period',
+        HIRE_BONUS_PCT: 'hire_bonus_pct',
+        CONTRACT_PAY_GP: 'contract_pay_gp'
+    };
+
+    var CONFIG = {
+        defaultResponseRatePct: 65,
+        seekIncidence: 1000,
+        classDistribution: [
+            { max: 20, value: 'Cleric' },
+            { max: 64, value: 'Fighter' },
+            { max: 84, value: 'Magic-User' },
+            { max: 99, value: 'Thief' },
+            { max: 100, value: 'Monk' }
+        ],
+        fighterSubclasses: [
+            { max: 10, value: 'Ranger' },
+            { max: 20, value: 'Paladin' },
+            { max: 100, value: 'Fighter' }
+        ],
+        clericSubclasses: [
+            { max: 17, value: 'Druid' },
+            { max: 100, value: 'Cleric' }
+        ],
+        magicUserSubclasses: [
+            { max: 17, value: 'Illusionist' },
+            { max: 100, value: 'Magic-User' }
+        ],
+        thiefSubclasses: [
+            { max: 17, value: 'Assassin' },
+            { max: 100, value: 'Thief' }
+        ],
+        shareCategories: {
+            none: { key: 'none', label: 'none', mod: -20 },
+            partial: { key: 'partial', label: 'partial', mod: -10 },
+            average: { key: 'average', label: 'average', mod: 0 },
+            above: { key: 'above', label: 'above average', mod: 5 },
+            exceptional: { key: 'exceptional', label: 'exceptional', mod: 10 }
+        },
+        wageTable: {
+            bearer: { label: 'Bearer/Porter', dailySp: 1, monthlyGp: 1, type: 'hireling' },
+            porter: { label: 'Bearer/Porter', dailySp: 1, monthlyGp: 1, type: 'hireling' },
+            bearerporter: { label: 'Bearer/Porter', dailySp: 1, monthlyGp: 1, type: 'hireling' },
+            carpenter: { label: 'Carpenter', dailySp: 3, monthlyGp: 2, type: 'hireling' },
+            leatherworker: { label: 'Leather Worker', dailySp: 2, monthlyGp: 3, type: 'hireling' },
+            limner: { label: 'Limner', dailySp: 10, monthlyGp: 10, type: 'hireling' },
+            linkboy: { label: 'Linkboy', dailySp: 1, monthlyGp: 1, type: 'hireling' },
+            mason: { label: 'Mason', dailySp: 4, monthlyGp: 3, type: 'hireling' },
+            packhandler: { label: 'Pack Handler', dailySp: 2, monthlyGp: 3, type: 'hireling' },
+            tailor: { label: 'Tailor', dailySp: 2, monthlyGp: 3, type: 'hireling' },
+            teamster: { label: 'Teamster', dailySp: 5, monthlyGp: 5, type: 'hireling' },
+            valet: { label: 'Valet/Lackey', dailySp: 3, monthlyGp: 5, type: 'hireling' },
+            lackey: { label: 'Valet/Lackey', dailySp: 3, monthlyGp: 5, type: 'hireling' },
+            valetlackey: { label: 'Valet/Lackey', dailySp: 3, monthlyGp: 5, type: 'hireling' },
+
+            alchemist: { label: 'Alchemist', monthlyGp: 300, type: 'expert' },
+            armorer: { label: 'Armorer', monthlyGp: 100, type: 'expert' },
+            blacksmith: { label: 'Blacksmith', monthlyGp: 30, type: 'expert' },
+            engineerarchitect: { label: 'Engineer-Architect', monthlyGp: 100, type: 'expert' },
+            architect: { label: 'Engineer-Architect', monthlyGp: 100, type: 'expert' },
+            engineerartillerist: { label: 'Engineer-Artillerist', monthlyGp: 150, type: 'expert' },
+            artilleristengineer: { label: 'Engineer-Artillerist', monthlyGp: 150, type: 'expert' },
+            engineersapperminer: { label: 'Engineer-Sapper/Miner', monthlyGp: 150, type: 'expert' },
+            sapperminerengineer: { label: 'Engineer-Sapper/Miner', monthlyGp: 150, type: 'expert' },
+            jewelergemcutter: { label: 'Jeweler-Gemcutter', monthlyGp: 100, type: 'expert' },
+            jeweler: { label: 'Jeweler-Gemcutter', monthlyGp: 100, type: 'expert' },
+            gemcutter: { label: 'Jeweler-Gemcutter', monthlyGp: 100, type: 'expert' },
+            scribe: { label: 'Scribe', monthlyGp: 15, type: 'expert' },
+            bowyerarrowsmithfletcher: { label: 'Bowyer-Arrowsmith-Fletcher', monthlyGp: 100, type: 'expert' },
+            bowyer: { label: 'Bowyer-Arrowsmith-Fletcher', monthlyGp: 100, type: 'expert' },
+            arrowsmith: { label: 'Bowyer-Arrowsmith-Fletcher', monthlyGp: 100, type: 'expert' },
+            fletcher: { label: 'Bowyer-Arrowsmith-Fletcher', monthlyGp: 100, type: 'expert' },
+            swordsmithdaggersmith: { label: 'Swordsmith-Daggersmith', monthlyGp: 100, type: 'expert' },
+            swordsmith: { label: 'Swordsmith-Daggersmith', monthlyGp: 100, type: 'expert' },
+            daggersmith: { label: 'Swordsmith-Daggersmith', monthlyGp: 100, type: 'expert' },
+            sage: { label: 'Sage', monthlyGp: 0, type: 'expert' },
+            mercenarysoldier: { label: 'Mercenary Soldier', monthlyGp: 0, dailySp: 0, type: 'expert' },
+            mercenary: { label: 'Mercenary Soldier', monthlyGp: 0, dailySp: 0, type: 'expert' },
+            soldier: { label: 'Mercenary Soldier', monthlyGp: 0, dailySp: 0, type: 'expert' }
+        },
+        sheetAttrs: {
+            level: 'level',
+            charClass: 'class',
+            race: 'race',
+            charisma: 'charisma',
+            reactionBonus: 'reactionbonus',
+            loyaltyBonus: 'loyaltybonus',
+            moraleBase: 'morale_base',
+            maximumHenchmen: 'maximumhenchmen',
+            pp: 'pp',
+            gp: 'gp',
+            sp: 'sp',
+            cp: 'cp',
+            isNpc: 'is_npc',
+            toggleNpc: 'toggle_npc'
+        },
+        charismaReactionMap: {
+            3: -25, 4: -20, 5: -15, 6: -10, 7: -5,
+            8: 0, 9: 0, 10: 0, 11: 0, 12: 0,
+            13: 5, 14: 10, 15: 15, 16: 20, 17: 30, 18: 40
+        },
+        sectionColors: {
+            recruit: { bg: '#8b0000', border: '#b22222' },
+            add: { bg: '#0b4f8a', border: '#3399ff' },
+            manage: { bg: '#333333', border: '#777777' },
+            ref: { bg: '#9a7500', border: '#c9a52f' }
+        }
+    };
+
+    function esc(str) {
+        return String(str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function line(label, value) {
+        return '<div><b>' + esc(label) + ':</b> ' + value + '</div>';
+    }
+
+    function box(title, body) {
+        return '<div style="background:#000;border:1px solid #666;padding:8px;color:#fff;max-width:420px;">' +
+            '<div style="font-weight:bold;font-size:14px;color:#fff;margin-bottom:6px;">' + esc(title) + '</div>' +
+            body +
+            mainMenuRow() +
+            '</div>';
+    }
+
+    function send(msg, who, playerid) {
+        sendChat('', '/direct ' + msg, null, { noarchive: true });
+    }
+
+    function sendPublic(msg) {
+        sendChat('', '/direct ' + msg, null, { noarchive: true });
+    }
+
+    function parseNumber(value, fallback) {
+        var n = parseFloat(value);
+        return _.isFinite(n) ? n : fallback;
+    }
+
+    function parseIntSafe(value, fallback) {
+        var n = parseInt(value, 10);
+        return _.isFinite(n) ? n : fallback;
+    }
+
+    function parseMoney(value, fallback) {
+        if (value === undefined || value === null || value === '') return fallback || 0;
+        return parseNumber(String(value).replace(/[^0-9.\-]/g, ''), fallback || 0);
+    }
+
+    function parseBool(value, fallback) {
+        if (value === undefined || value === null || value === '') return !!fallback;
+        value = String(value).toLowerCase();
+        if (_.contains(['yes', 'true', '1', 'y', 'on'], value)) return true;
+        if (_.contains(['no', 'false', '0', 'n', 'off'], value)) return false;
+        return !!fallback;
+    }
+
+    function formatNumber2(n) {
+        var s = (Math.round(n * 100) / 100).toFixed(2);
+        s = s.replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+        return s;
+    }
+
+    function clamp(n, min, max) {
+        return Math.max(min, Math.min(max, n));
+    }
+
+    function lerp(a, b, t) {
+        return a + (b - a) * t;
+    }
+
+    function normalizeText(value) {
+        return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+    }
+
+    function pctRoll() {
+        return randomInteger(100);
+    }
+
+    function randomInt(min, max) {
+        return randomInteger(max - min + 1) + min - 1;
+    }
+
+    function formatWage(dailySp, monthlyGp) {
+        var daily = parseNumber(dailySp, 0);
+        var monthly = parseNumber(monthlyGp, 0);
+        var dailyText = formatNumber2(daily);
+        var monthlyText = formatNumber2(monthly);
+
+        if (daily > 0 && monthly > 0) return dailyText + ' sp/day, ' + monthlyText + ' gp/month';
+        if (daily > 0) return dailyText + ' sp/day';
+        if (monthly > 0) return monthlyText + ' gp/month';
+        return 'special/manual';
+    }
+
+    function buttonCommand(cmd) {
+        return String(cmd)
+            .replace(/&/g, '&amp;')
+            .replace(/\|/g, '&#124;')
+            .replace(/,/g, '&#44;');
+    }
+
+    function menuBtn(label, command, bg, border, width) {
+        return '<a href="' + buttonCommand(command) + '" style="' +
+            'display:inline-block;' +
+            'min-width:' + (width || 86) + 'px;' +
+            'padding:4px 8px;' +
+            'margin:2px 6px 2px 0;' +
+            'background:' + bg + ';' +
+            'border:1px solid ' + border + ';' +
+            'color:#fff;' +
+            'text-decoration:none;' +
+            'font-weight:normal;' +
+            'font-size:11px;' +
+            'line-height:14px;' +
+            'text-align:center;' +
+            'border-radius:0;' +
+            '">' + esc(label) + '</a>';
+    }
+
+    function removeCandidatesBtn(command, width) {
+        return menuBtn('Remove Candidates', command, '#8b0000', '#ff4444', width || 128);
+    }
+
+    function dangerBtn(label, command, width) {
+        return menuBtn(label, command, '#8b0000', '#ff4444', width || 94);
+    }
+
+    function mainMenuRow() {
+        return '<div style="margin-top:8px;">' +
+            menuBtn('Main Menu', '!retainer-menu', CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 92) +
+            '</div>';
+    }
+
+    function menuSection(title, buttons) {
+        return '<div style="margin:10px 0 0 0;padding-top:8px;border-top:1px solid #555;">' +
+            '<div style="font-weight:bold;font-size:14px;color:#fff;margin:0 0 6px 0;">' + esc(title) + '</div>' +
+            buttons.join(' ') +
+            '</div>';
+    }
+
+    function retainerManageButton(retainerId) {
+        return menuBtn('Manage', '!retainer-manage --id|' + retainerId, CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 64);
+    }
+
+    function retainerPayButton(retainerId) {
+        return menuBtn('Pay', '!retainer-pay-menu --id|' + retainerId, CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 56);
+    }
+
+    function employerPayAllButton(employerId) {
+        return menuBtn('Pay All', '!retainer-pay-all --pc|' + employerId, CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 70);
+    }
+
+    function retainerLoyaltyAdjustButton(retainerId) {
+        return menuBtn('Loyalty +/-', '!retainer-modify --id|' + retainerId + ' --loyaltymod|?{Loyalty adjustment (use - to decrease)|0}', CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 82);
+    }
+
+    function parseArgs(content) {
+        var args = {};
+        var parts = String(content || '').split(/\s+--/);
+        var i, p, idx, key, val;
+
+        parts.shift();
+
+        for (i = 0; i < parts.length; i++) {
+            p = parts[i];
+            idx = p.indexOf('|');
+            if (idx === -1) continue;
+            key = p.slice(0, idx).replace(/^\s+|\s+$/g, '').toLowerCase();
+            val = p.slice(idx + 1).replace(/^\s+|\s+$/g, '');
+
+            if ((val.charAt(0) === '"' && val.charAt(val.length - 1) === '"') ||
+                (val.charAt(0) === "'" && val.charAt(val.length - 1) === "'")) {
+                val = val.slice(1, -1);
+            }
+            args[key] = val;
+        }
+        return args;
+    }
+
+    function parseCsvList(value) {
+        if (!value) return [];
+        return String(value).split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    }
+
+    function parseDistribution(value) {
+        var result = [];
+        _.each(parseCsvList(value), function (entry) {
+            var parts = entry.split(':');
+            if (parts.length === 2) {
+                result.push({ race: parts[0].trim(), pct: parseNumber(parts[1], 0) });
+            }
+        });
+        return result;
+    }
+
+    function splitControlledBy(controlledby) {
+        if (!controlledby) return [];
+        return String(controlledby).split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    }
+
+    function firstControlledPlayerId(character) {
+        if (!character) return '';
+        var controlled = _.filter(splitControlledBy(character.get('controlledby')), function (id) {
+            return id && id !== 'all';
+        });
+        return controlled.length ? controlled[0] : '';
+    }
+
+    function getEmployerPlayerId(employer, fallbackPlayerId) {
+        var controlled = firstControlledPlayerId(employer);
+        return controlled || fallbackPlayerId || '';
+    }
+
+    function findPlayer(playerid) {
+        return getObj('player', playerid);
+    }
+
+    function getDisplayName(playerid) {
+        var p = findPlayer(playerid);
+        return p ? p.get('_displayname') : 'GM';
+    }
+
+    function getAttr(characterId, name) {
+        var attr = findObjs({ type: 'attribute', characterid: characterId, name: name })[0];
+        return attr ? attr.get('current') : '';
+    }
+
+    function setAttr(characterId, name, value) {
+        var attr = findObjs({ type: 'attribute', characterid: characterId, name: name })[0];
+        var moraleAttr;
+
+        if (attr) attr.set('current', value);
+        else createObj('attribute', { characterid: characterId, name: name, current: value });
+
+        if (name === ATTR.LOYALTY_CURRENT) {
+            moraleAttr = findObjs({ type: 'attribute', characterid: characterId, name: CONFIG.sheetAttrs.moraleBase })[0];
+            if (moraleAttr) moraleAttr.set('current', value);
+            else createObj('attribute', { characterid: characterId, name: CONFIG.sheetAttrs.moraleBase, current: value });
+        }
+    }
+
+    function getNumAttr(characterId, name, fallback) {
+        var v = parseFloat(getAttr(characterId, name));
+        return _.isFinite(v) ? v : (fallback || 0);
+    }
+
+    function buildAttrIndex() {
+        var attrs = findObjs({ type: 'attribute' }) || [];
+        var idx = {};
+        _.each(attrs, function (a) {
+            var cid = a.get('characterid');
+            var name = a.get('name');
+            if (!cid || !name) return;
+            if (!idx[cid]) idx[cid] = {};
+            if (typeof idx[cid][name] === 'undefined') idx[cid][name] = a.get('current');
+        });
+        return idx;
+    }
+
+    function indexedAttr(attrIndex, characterId, name) {
+        if (attrIndex && attrIndex[characterId] && typeof attrIndex[characterId][name] !== 'undefined') {
+            return attrIndex[characterId][name];
+        }
+        return '';
+    }
+
+    function firstSelectedToken(msg) {
+        if (!msg.selected || !msg.selected.length) return null;
+        return getObj('graphic', msg.selected[0]._id);
+    }
+
+    function characterFromToken(token) {
+        if (!token) return null;
+        var charId = token.get('represents');
+        return charId ? getObj('character', charId) : null;
+    }
+
+    function getCharacterByRef(ref) {
+        if (!ref) return null;
+        var byId = getObj('character', ref);
+        if (byId) return byId;
+        return _.find(findObjs({ type: 'character' }) || [], function (c) {
+            return String(c.get('name') || '').toLowerCase() === String(ref).toLowerCase();
+        }) || null;
+    }
+
+    function getRetainerByRef(msg, args) {
+        var ref = (args && (args.id || args.retainer || args.character || args.charid)) || '';
+        var retainer = null;
+
+        if (ref) retainer = getCharacterByRef(ref);
+        if (!retainer) retainer = getSelectedCharacter(msg);
+        if (!retainer) return null;
+        if (getAttr(retainer.id, ATTR.RETAINER_TYPE) === '') return null;
+        return retainer;
+    }
+
+    function requireRetainerManage(msg, retainer) {
+        var employerId, employer, employerPlayerId;
+
+        if (!retainer) {
+            send('No retainer was found. Use --id|<retainer id or name> or select a retainer token.', msg.who, msg.playerid);
+            return false;
+        }
+
+        if (playerIsGM(msg.playerid)) return true;
+
+        employerId = getAttr(retainer.id, ATTR.EMPLOYER_ID);
+        employerPlayerId = getAttr(retainer.id, ATTR.EMPLOYER_PLAYER_ID);
+        employer = employerId ? getCharacterByRef(employerId) : null;
+
+        if (employerPlayerId === msg.playerid) return true;
+        if (employer && canPlayerControlCharacter(msg.playerid, employer)) return true;
+        if (canPlayerControlCharacter(msg.playerid, retainer)) return true;
+
+        send('You do not control retainer ' + esc(retainer.get('name') || 'Unnamed Retainer') + '.', msg.who, msg.playerid);
+        return false;
+    }
+
+    function getSelectedCharacter(msg) {
+        return characterFromToken(firstSelectedToken(msg));
+    }
+
+    function getEmployerCharacter(msg, args) {
+        if (args.employer || args.pc || args.pcid) return getCharacterByRef(args.employer || args.pc || args.pcid);
+        return getSelectedCharacter(msg);
+    }
+
+    function getTargetCharacter(msg, args) {
+        if (args.target || args.targetid || args.npc) return getCharacterByRef(args.target || args.targetid || args.npc);
+        return getSelectedCharacter(msg);
+    }
+
+    function canPlayerControlCharacter(playerid, character) {
+        if (!character) return false;
+        if (playerIsGM(playerid)) return true;
+        var controlled = splitControlledBy(character.get('controlledby'));
+        return _.contains(controlled, 'all') || _.contains(controlled, playerid);
+    }
+
+    function requireControl(msg, character, label) {
+        if (!character) {
+            send('No ' + (label || 'character') + ' was found.', msg.who, msg.playerid);
+            return false;
+        }
+        if (!canPlayerControlCharacter(msg.playerid, character)) {
+            send('You do not control ' + esc(character.get('name')) + '.', msg.who, msg.playerid);
+            return false;
+        }
+        return true;
+    }
+
+    function getPCLevel(character) {
+        return parseIntSafe(getAttr(character.id, CONFIG.sheetAttrs.level), 1) || 1;
+    }
+
+    function getPCReactionAdj(character, args) {
+        if (args && args.chaadj !== undefined) return parseIntSafe(args.chaadj, 0) || 0;
+        var reactionAttr = parseIntSafe(getAttr(character.id, CONFIG.sheetAttrs.reactionBonus), NaN);
+        var cha;
+        if (_.isFinite(reactionAttr)) return reactionAttr;
+        cha = parseIntSafe(getAttr(character.id, CONFIG.sheetAttrs.charisma), 10);
+        return CONFIG.charismaReactionMap[cha] || 0;
+    }
+
+    function getReactionBonusPct(character) {
+        if (!character) return 0;
+        return parseIntSafe(getAttr(character.id, CONFIG.sheetAttrs.reactionBonus), 0) || 0;
+    }
+
+    function getPCLoyaltyAdj(character, args) {
+        if (args && args.loyaltyadj !== undefined) return parseIntSafe(args.loyaltyadj, 0) || 0;
+        var loyaltyAttr = parseIntSafe(getAttr(character.id, CONFIG.sheetAttrs.loyaltyBonus), NaN);
+        if (_.isFinite(loyaltyAttr)) return loyaltyAttr;
+        return 0;
+    }
+
+    function getMaximumHenchmen(character) {
+        return parseIntSafe(getAttr(character.id, CONFIG.sheetAttrs.maximumHenchmen), 0) || 0;
+    }
+
+    function determineCandidateLevel(pcLevel) {
+        pcLevel = parseIntSafe(pcLevel, 1) || 1;
+        var roll = pctRoll();
+
+        if (pcLevel > 11) {
+            if (roll <= 25) return 3;
+            if (roll <= 50) return 2;
+            return 1;
+        }
+        if (pcLevel > 6) return roll <= 10 ? 2 : 1;
+        return 1;
+    }
+
+    function weightedPick(entries, roll) {
+        var n = roll || pctRoll();
+        var i;
+        for (i = 0; i < entries.length; i++) {
+            if (n <= entries[i].max) return entries[i].value;
+        }
+        return entries[entries.length - 1].value;
+    }
+
+    function determineClass() {
+        var base = weightedPick(CONFIG.classDistribution);
+
+        switch (base) {
+            case 'Cleric': return weightedPick(CONFIG.clericSubclasses, pctRoll());
+            case 'Fighter': return weightedPick(CONFIG.fighterSubclasses, pctRoll());
+            case 'Magic-User': return weightedPick(CONFIG.magicUserSubclasses, pctRoll());
+            case 'Thief': return weightedPick(CONFIG.thiefSubclasses, pctRoll());
+            default: return base;
+        }
+    }
+
+    function normalizeRaceDistribution(dist) {
+        if (!dist.length) return [{ race: 'Human', max: 100 }];
+
+        var total = _.reduce(dist, function (m, e) { return m + e.pct; }, 0);
+        var running = 0;
+        if (!total) return [{ race: 'Human', max: 100 }];
+
+        return _.map(dist, function (e, idx) {
+            running += (e.pct / total) * 100;
+            return { race: e.race, max: idx === dist.length - 1 ? 100 : running };
+        });
+    }
+
+    function pickRace(raceBands) {
+        var roll = pctRoll();
+        var i;
+        for (i = 0; i < raceBands.length; i++) {
+            if (roll <= raceBands[i].max) return raceBands[i].race;
+        }
+        return raceBands[raceBands.length - 1].race;
+    }
+
+    function makeName() {
+        var first = ['Al', 'Bel', 'Cor', 'Dar', 'Ela', 'Fen', 'Gar', 'Hel', 'Ivo', 'Jar', 'Kel', 'Lys', 'Mor', 'Ner', 'Or', 'Per', 'Quin', 'Rav', 'Sel', 'Tor', 'Ul', 'Var', 'Wes', 'Yor', 'Zan'];
+        var second = ['adin', 'bar', 'cis', 'deth', 'en', 'fara', 'grim', 'hal', 'ian', 'jor', 'kas', 'lor', 'mond', 'nor', 'or', 'prus', 'quil', 'ric', 'sen', 'tor', 'us', 'vor', 'wen', 'yor', 'zir'];
+        return first[randomInt(0, first.length - 1)] + second[randomInt(0, second.length - 1)];
+    }
+
+    function randomNameQuery(label) {
+        return '?{' + (label || 'Name') + '|' + makeName() + '}';
+    }
+
+    function randomDelayReason() {
+        var reasons = [
+            'Thinking about the offer.',
+            'Needs to check with family first.',
+            'Has some business to settle before leaving.',
+            'Not keen on getting killed.',
+            'Wants to finish current work first.',
+            'Needs time to gather equipment.',
+            'Promised to see a matter through locally.',
+            'Wants to hear more about the party\'s reputation.',
+            'Needs to collect a debt owed to them.',
+            'Is waiting on word from a relative.',
+            'Has to put affairs in order before departing.',
+            'Needs a day or two to think it over.',
+            'Is speaking with a trusted friend for advice.',
+            'Wants to pray or meditate on the decision.',
+            'Needs to arrange lodging and personal matters.',
+            'Is finishing a small commission first.',
+            'Wants to ask around about the risks involved.',
+            'Needs to settle accounts with an employer.',
+            'Is reluctant to leave town immediately.',
+            'Wants one last look at the terms before agreeing.'
+        ];
+        return reasons[randomInt(0, reasons.length - 1)];
+    }
+
+    function buildCandidate(employer, playerid, raceBands) {
+        var pcLevel = getPCLevel(employer);
+        var candidate = {
+            id: 'C' + state[STATE].nextCandidateId++,
+            name: makeName(),
+            race: pickRace(raceBands),
+            className: determineClass(),
+            level: determineCandidateLevel(pcLevel),
+            employerId: employer.id,
+            employerName: employer.get('name'),
+            employerPlayerId: playerid
+        };
+        state[STATE].candidates[candidate.id] = candidate;
+        return candidate;
+    }
+
+    function ppToCp(pp) {
+        return Math.round(parseNumber(pp, 0) * 500);
+    }
+
+    function gpToCp(gp) {
+        return Math.round(parseNumber(gp, 0) * 100);
+    }
+
+    function spToCp(sp) {
+        return Math.round(parseNumber(sp, 0) * 10);
+    }
+
+    function cpToGp(cp) {
+        return cp / 100;
+    }
+
+    function coinAttrs() {
+        return [
+            { attr: CONFIG.sheetAttrs.pp, key: 'pp', cp: 500 },
+            { attr: CONFIG.sheetAttrs.gp, key: 'gp', cp: 100 },
+            { attr: CONFIG.sheetAttrs.sp, key: 'sp', cp: 10 },
+            { attr: CONFIG.sheetAttrs.cp, key: 'cp', cp: 1 }
+        ];
+    }
+
+    function getCoinBundle(characterId) {
+        var out = { pp: 0, gp: 0, sp: 0, cp: 0 };
+        _.each(coinAttrs(), function (c) {
+            out[c.key] = parseIntSafe(getAttr(characterId, c.attr), 0) || 0;
+        });
+        return out;
+    }
+
+    function totalCpFromBundle(bundle) {
+        var total = 0;
+        _.each(coinAttrs(), function (c) {
+            total += (bundle[c.key] || 0) * c.cp;
+        });
+        return total;
+    }
+
+    function bundleFromCp(totalCp) {
+        var remaining = Math.max(0, Math.round(totalCp));
+        var out = { pp: 0, gp: 0, sp: 0, cp: 0 };
+        _.each(coinAttrs(), function (c) {
+            out[c.key] = Math.floor(remaining / c.cp);
+            remaining = remaining % c.cp;
+        });
+        return out;
+    }
+
+    function setCoinBundle(characterId, bundle) {
+        setAttr(characterId, CONFIG.sheetAttrs.pp, bundle.pp || 0);
+        setAttr(characterId, CONFIG.sheetAttrs.gp, bundle.gp || 0);
+        setAttr(characterId, CONFIG.sheetAttrs.sp, bundle.sp || 0);
+        setAttr(characterId, CONFIG.sheetAttrs.cp, bundle.cp || 0);
+    }
+
+    function formatCoinBundle(bundle) {
+        return 'PP: ' + (bundle.pp || 0) +
+            ', GP: ' + (bundle.gp || 0) +
+            ', SP: ' + (bundle.sp || 0) +
+            ', CP: ' + (bundle.cp || 0);
+    }
+
+    function formatCpAsCoins(cp) {
+        return formatCoinBundle(bundleFromCp(cp));
+    }
+
+    function bundleFromSingleCoin(coinKey, amount) {
+        var out = { pp: 0, gp: 0, sp: 0, cp: 0 };
+        out[coinKey] = Math.max(0, parseIntSafe(amount, 0) || 0);
+        return out;
+    }
+
+    function deductCoins(character, amountCp) {
+        var before = getCoinBundle(character.id);
+        var total = totalCpFromBundle(before);
+
+        if (amountCp <= 0) {
+            return {
+                ok: true,
+                before: before,
+                after: before,
+                amountCp: 0
+            };
+        }
+
+        if (total < amountCp) {
+            return {
+                ok: false,
+                before: before,
+                after: before,
+                amountCp: amountCp
+            };
+        }
+
+        var after = bundleFromCp(total - amountCp);
+        setCoinBundle(character.id, after);
+
+        return {
+            ok: true,
+            before: before,
+            after: after,
+            amountCp: amountCp
+        };
+    }
+
+
+    function addCoins(character, amountCp) {
+        var before = getCoinBundle(character.id);
+        var total = totalCpFromBundle(before);
+        var after = bundleFromCp(total + Math.max(0, Math.round(amountCp || 0)));
+
+        setCoinBundle(character.id, after);
+
+        return {
+            ok: true,
+            before: before,
+            after: after,
+            amountCp: Math.max(0, Math.round(amountCp || 0))
+        };
+    }
+
+    function loyaltyBand(score) {
+        var n = parseIntSafe(score, 0) || 0;
+
+        if (n < 1) {
+            return {
+                range: 'Less than 01',
+                label: 'None',
+                desc: 'will attempt to kill, capture, harm, or desert at first possible opportunity'
+            };
+        }
+        if (n <= 25) {
+            return {
+                range: '01-25',
+                label: 'Disloyal',
+                desc: 'will always seek own advantage regardless of circumstances'
+            };
+        }
+        if (n <= 50) {
+            return {
+                range: '26-50',
+                label: 'Little',
+                desc: 'will seek own advantage at first sign of weakness'
+            };
+        }
+        if (n <= 75) {
+            return {
+                range: '51-75',
+                label: 'Fair',
+                desc: 'will support cause if no great risk is involved'
+            };
+        }
+        if (n <= 100) {
+            return {
+                range: '76-100',
+                label: 'Loyal',
+                desc: 'will always attempt to further the ends of the liege, even at great risk'
+            };
+        }
+        return {
+            range: 'Greater than 100',
+            label: 'Fanatical',
+            desc: 'will serve unquestioningly and lay down own life if necessary without hesitation'
+        };
+    }
+
+    function formatLoyaltyStatus(score) {
+        var band = loyaltyBand(score);
+        return band.label + ' (' + band.range + ') — ' + band.desc;
+    }
+
+    function getNormalPayBreakdown(retainer) {
+        var payPeriodRaw = getAttr(retainer.id, ATTR.PAY_PERIOD) || '';
+        var payPeriodKey = normalizeText(payPeriodRaw);
+        var contractGp = parseMoney(getAttr(retainer.id, ATTR.CONTRACT_PAY_GP), 0);
+        var contractCp = gpToCp(contractGp);
+        var dailySp = parseNumber(getAttr(retainer.id, ATTR.DAILY_WAGE_SP), 0);
+        var monthlyGp = parseMoney(getAttr(retainer.id, ATTR.MONTHLY_WAGE_GP), 0);
+        var dailyCp = spToCp(dailySp);
+        var monthlyCp = gpToCp(monthlyGp);
+        var wageCp = 0;
+        var wageBasis = 'none';
+        var note = '';
+
+        if (contractCp > 0 && payPeriodKey.indexOf('prorated') !== -1) {
+            note = 'Contract pay due already covers the current prorated amount.';
+        } else if (payPeriodKey.indexOf('month') !== -1 && monthlyCp > 0) {
+            wageCp = monthlyCp;
+            wageBasis = '1 month';
+        } else if (payPeriodKey.indexOf('day') !== -1 && dailyCp > 0) {
+            wageCp = dailyCp;
+            wageBasis = '1 day';
+        } else if (dailyCp > 0 && monthlyCp <= 0) {
+            wageCp = dailyCp;
+            wageBasis = '1 day';
+        } else if (monthlyCp > 0) {
+            wageCp = monthlyCp;
+            wageBasis = '1 month';
+        } else if (dailyCp > 0) {
+            wageCp = dailyCp;
+            wageBasis = '1 day';
+        }
+
+        return {
+            payPeriod: payPeriodRaw || '',
+            wageCp: wageCp,
+            wageBasis: wageBasis,
+            contractCp: contractCp,
+            totalCp: wageCp + contractCp,
+            note: note
+        };
+    }
+
+    function payMenuRow(retainerId) {
+        return '<div style="margin-top:8px;">' +
+            menuBtn('Back to Manage', '!retainer-manage --id|' + retainerId, CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 108) +
+            '</div>';
+    }
+
+    function getContractPayOnlyBreakdown(retainer) {
+        var contractGp = parseMoney(getAttr(retainer.id, ATTR.CONTRACT_PAY_GP), 0);
+        var contractCp = gpToCp(contractGp);
+
+        return {
+            contractCp: contractCp,
+            totalCp: contractCp,
+            note: contractCp > 0 ? '' : 'No contract amount is currently due.'
+        };
+    }
+
+    function getProratedPayBreakdown(retainer, daysWorked) {
+        var days = Math.max(0, parseIntSafe(daysWorked, 0) || 0);
+        var dailySp = parseNumber(getAttr(retainer.id, ATTR.DAILY_WAGE_SP), 0);
+        var monthlyGp = parseMoney(getAttr(retainer.id, ATTR.MONTHLY_WAGE_GP), 0);
+        var dailyCp = dailySp > 0 ? spToCp(dailySp) : 0;
+        var monthlyCp = monthlyGp > 0 ? gpToCp(monthlyGp) : 0;
+        var perDayCp = 0;
+        var basis = 'none';
+
+        if (dailyCp > 0) {
+            perDayCp = dailyCp;
+            basis = 'daily rate';
+        } else if (monthlyCp > 0) {
+            perDayCp = Math.round(monthlyCp / 30);
+            basis = 'monthly rate prorated by 30 days';
+        }
+
+        return {
+            daysWorked: days,
+            perDayCp: perDayCp,
+            totalCp: perDayCp * days,
+            basis: basis
+        };
+    }
+
+
+
+    function getShareCategoryByKey(key) {
+        key = normalizeText(key);
+        if (_.contains(['late', 'unfair'], key)) return CONFIG.shareCategories.partial;
+        if (_.contains(['aboveaverage', 'choiceshares', 'choice'], key)) return CONFIG.shareCategories.above;
+        if (_.contains(['bonus', 'giftitem', 'giftitems'], key)) return CONFIG.shareCategories.exceptional;
+        return CONFIG.shareCategories[key] || null;
+    }
+
+    function inferShareCategory(sharePct) {
+        sharePct = Math.max(0, parseNumber(sharePct, 0));
+        if (sharePct <= 0) return CONFIG.shareCategories.none;
+        if (sharePct <= 5) return CONFIG.shareCategories.partial;
+        if (sharePct <= 12) return CONFIG.shareCategories.average;
+        if (sharePct <= 25) return CONFIG.shareCategories.above;
+        return CONFIG.shareCategories.exceptional;
+    }
+
+    function getShareCategory(args, sharePct) {
+        return CONFIG.shareCategories.average;
+    }
+
+    function resolveWage(subType, args) {
+        var key = normalizeText(subType || args.subtype || '');
+        var lookup = CONFIG.wageTable[key] || null;
+        var dailySp = parseNumber(args.dailysp, NaN);
+        var monthlyGp = parseNumber(args.monthlygp, NaN);
+        var source = 'custom';
+
+        if (!_.isFinite(dailySp) && !_.isFinite(monthlyGp) && args.wage !== undefined && args.wage !== '') {
+            monthlyGp = parseMoney(args.wage, 0);
+        }
+
+        if (!_.isFinite(dailySp) && lookup) dailySp = lookup.dailySp;
+        if (!_.isFinite(monthlyGp) && lookup) monthlyGp = lookup.monthlyGp;
+
+        if (_.isFinite(monthlyGp) && monthlyGp === 0 && lookup && lookup.monthlyGp > 0 && String(args.monthlygp) === '0') {
+            monthlyGp = lookup.monthlyGp;
+        }
+
+        if (!_.isFinite(dailySp)) dailySp = 0;
+        if (!_.isFinite(monthlyGp)) monthlyGp = 0;
+
+        if (lookup && normalizeText(args.wagesource || '') !== 'custom') source = lookup.label;
+        if (args.wagesource) source = args.wagesource;
+
+        return {
+            dailySp: dailySp,
+            monthlyGp: monthlyGp,
+            source: source,
+            label: lookup ? lookup.label : (args.subtype || '')
+        };
+    }
+
+    function applyWageAdjustmentPct(wages, pct) {
+        var factor = 1 + (parseNumber(pct, 0) / 100);
+        var dailySp = parseNumber(wages && wages.dailySp, 0);
+        var monthlyGp = parseNumber(wages && wages.monthlyGp, 0);
+
+        factor = Math.max(0, factor);
+
+        return {
+            dailySp: Math.max(0, Math.round(dailySp * factor * 100) / 100),
+            monthlyGp: Math.max(0, Math.round(monthlyGp * factor * 100) / 100),
+            source: wages && wages.source ? wages.source : 'custom',
+            label: wages && wages.label ? wages.label : ''
+        };
+    }
+
+
+    function defaultXpModeForType(retainerType) {
+        var key = normalizeText(retainerType || '');
+        if (key === 'henchman') return 'half';
+        if (key === 'companion' || key === 'fullshare' || key === 'full') return 'full';
+        return 'none';
+    }
+
+    function basePercentFromBonusPct(bonusPct) {
+        var b = clamp(parseNumber(bonusPct, 0), 0, 100);
+
+        if (b <= 10) return Math.round(lerp(17, 33, b / 10));
+        if (b <= 15) return Math.round(lerp(33, 50, (b - 10) / 5));
+        if (b <= 20) return Math.round(lerp(50, 67, (b - 15) / 5));
+        if (b <= 25) return Math.round(lerp(67, 83, (b - 20) / 5));
+        return Math.round(lerp(83, 100, (b - 25) / 75));
+    }
+
+    function bonusLevels() {
+        var out = [];
+        var i;
+        for (i = 0; i <= 100; i += 5) out.push(i);
+        return out;
+    }
+
+    function standardEmploymentSuccessCap(retainerType) {
+        return 95;
+    }
+
+    function responseWindowFromPopulation(population) {
+        population = parseIntSafe(population, 0) || 0;
+
+        if (population < 200) return randomInt(1, 4);
+        if (population <= 1000) return randomInt(1, 6);
+        if (population <= 5000) return randomInt(1, 8);
+        if (population > 8000) return randomInt(2, 20);
+        return randomInt(1, 10);
+    }
+
+    function buildHireBonusQuery(employer, retainerType) {
+        var reactionPct = employer ? getReactionBonusPct(employer) : 0;
+        var title = 'Upfront bonus requirement for jobs over 7 days';
+        var levels = bonusLevels();
+        var successCap = standardEmploymentSuccessCap(retainerType);
+        var seen = {};
+        var options = [];
+
+        if (employer) {
+            title += ' (Reaction mod ' + (reactionPct >= 0 ? '+' : '') + reactionPct + '% included';
+        } else {
+            title += ' (base success only; reaction mod added when rolled';
+        }
+
+        if (successCap < 100) {
+            title += ', capped at ' + successCap + '%';
+        }
+
+        title += ')';
+
+        _.each(levels, function (pct) {
+            var base = basePercentFromBonusPct(pct);
+            var finalChance = employer ? clamp(base + reactionPct, 0, successCap) : clamp(base, 0, successCap);
+            var key = String(finalChance);
+            var label;
+
+            if (seen[key]) return;
+            seen[key] = true;
+
+            label = pct + '% upfront bonus = ' + finalChance + '% success';
+            if (finalChance >= successCap) label += ' (max useful)';
+            options.push(label + ',' + pct);
+        });
+
+        return '?{' + title + '|' + options.join('|') + '}';
+    }
+
+    function isStandardEmploymentType(retainerType) {
+        var k = normalizeText(retainerType || '');
+        return k === 'hireling' || k === 'expert';
+    }
+
+    function contractBaseCp(retainerType, wages, days) {
+        var d = Math.max(1, parseIntSafe(days, 1) || 1);
+        var dailyCp = 0;
+
+        if ((wages.dailySp || 0) > 0) {
+            dailyCp = spToCp(wages.dailySp);
+        } else if ((wages.monthlyGp || 0) > 0) {
+            dailyCp = Math.round(gpToCp(wages.monthlyGp) / 30);
+        }
+
+        return dailyCp * d;
+    }
+
+    function standardUpfrontBonusCp(wages, bonusPct, days) {
+        if ((parseIntSafe(days, 0) || 0) <= 7) return 0;
+        return Math.round(gpToCp(wages.monthlyGp || 0) * ((parseNumber(bonusPct, 0) || 0) / 100));
+    }
+
+    function buildRetainerButtonCommand(baseArgs) {
+        var cmd = '!retainer-add';
+        _.each(baseArgs, function (v, k) {
+            if (v !== undefined && v !== null && v !== '') {
+                cmd += ' --' + k + '|' + v;
+            }
+        });
+        return cmd;
+    }
+
+    function roll4d6DropLowest() {
+        var rolls = [randomInt(1, 6), randomInt(1, 6), randomInt(1, 6), randomInt(1, 6)];
+        rolls.sort(function (a, b) { return a - b; });
+        return rolls[1] + rolls[2] + rolls[3];
+    }
+
+    function rollAbilityScores() {
+        return {
+            strength: roll4d6DropLowest(),
+            intelligence: roll4d6DropLowest(),
+            wisdom: roll4d6DropLowest(),
+            dexterity: roll4d6DropLowest(),
+            constitution: roll4d6DropLowest(),
+            charisma: roll4d6DropLowest()
+        };
+    }
+
+    function setRolledAbilityScores(characterId, scores) {
+        setAttr(characterId, 'strength', scores.strength);
+        setAttr(characterId, 'str', scores.strength);
+        setAttr(characterId, 'intelligence', scores.intelligence);
+        setAttr(characterId, 'int', scores.intelligence);
+        setAttr(characterId, 'wisdom', scores.wisdom);
+        setAttr(characterId, 'wis', scores.wisdom);
+        setAttr(characterId, 'dexterity', scores.dexterity);
+        setAttr(characterId, 'dex', scores.dexterity);
+        setAttr(characterId, 'constitution', scores.constitution);
+        setAttr(characterId, 'con', scores.constitution);
+        setAttr(characterId, 'charisma', scores.charisma);
+        setAttr(characterId, 'cha', scores.charisma);
+    }
+
+    function applyRetainerAttrsToCharacter(char, opts, rollScores) {
+        setAttr(char.id, ATTR.RETAINER_TYPE, opts.retainerType || 'henchman');
+        setAttr(char.id, ATTR.RETAINER_SUBTYPE, opts.subType || '');
+        setAttr(char.id, ATTR.EMPLOYER_ID, opts.employer.id);
+        setAttr(char.id, ATTR.EMPLOYER_NAME, opts.employer.get('name'));
+        setAttr(char.id, ATTR.EMPLOYER_PLAYER_ID, opts.playerid || '');
+        setAttr(char.id, ATTR.HIRE_METHOD, opts.hireMethod || 'market');
+        setAttr(char.id, ATTR.STATUS, opts.status || 'active');
+        setAttr(char.id, ATTR.RETAINER_XP_MODE, opts.xpMode || defaultXpModeForType(opts.retainerType || 'henchman'));
+        setAttr(char.id, ATTR.DAILY_WAGE_SP, opts.dailyWageSp || 0);
+        setAttr(char.id, ATTR.MONTHLY_WAGE_GP, opts.monthlyWageGp || 0);
+        setAttr(char.id, ATTR.WAGE_SOURCE, opts.wageSource || 'custom');
+        setAttr(char.id, ATTR.INITIAL_PAYMENT, opts.initialPayment || 0);
+        setAttr(char.id, ATTR.TREASURE_SHARE_PCT, opts.sharePct || 0);
+        setAttr(char.id, ATTR.SHARE_CATEGORY, opts.shareCategory.key || opts.shareCategory || 'average');
+        setAttr(char.id, ATTR.MAGIC_DIVISION, opts.magicDivision || '');
+        setAttr(char.id, ATTR.QUARTERS_SUPPORT, opts.quartersSupport ? 'yes' : 'no');
+        setAttr(char.id, ATTR.EQUIPMENT, opts.equipment || '');
+        setAttr(char.id, ATTR.MAGIC_ITEMS, opts.magicItems || 0);
+        setAttr(char.id, ATTR.ASSIGNMENT, opts.assignment || '');
+        setAttr(char.id, ATTR.LOYALTY_BASE, opts.loyaltyBase || 50);
+        setAttr(char.id, ATTR.LOYALTY_CURRENT, opts.loyaltyCurrent || opts.loyaltyBase || 50);
+        setAttr(char.id, ATTR.LOYALTY_NOTES, opts.loyaltyNotes || '');
+        setAttr(char.id, ATTR.DM_MOD, opts.dmMod || 0);
+        setAttr(char.id, ATTR.DM_REASON, opts.dmReason || '');
+        setAttr(char.id, ATTR.OFFER_NOTES, opts.offerNotes || '');
+        setAttr(char.id, ATTR.NPC_LEVEL, opts.npcLevel || 1);
+        setAttr(char.id, ATTR.NPC_CLASS, opts.className || '');
+        setAttr(char.id, ATTR.NPC_RACE, opts.race || '');
+        setAttr(char.id, ATTR.CONTRACT_DAYS, opts.contractDays || 0);
+        setAttr(char.id, ATTR.PAY_PERIOD, opts.payPeriod || '');
+        setAttr(char.id, ATTR.HIRE_BONUS_PCT, opts.hireBonusPct || 0);
+        setAttr(char.id, ATTR.CONTRACT_PAY_GP, opts.contractPayGp || 0);
+
+        setAttr(char.id, CONFIG.sheetAttrs.level, opts.npcLevel || 1);
+        setAttr(char.id, CONFIG.sheetAttrs.charClass, opts.className || '');
+        setAttr(char.id, CONFIG.sheetAttrs.race, opts.race || '');
+        if (rollScores) setRolledAbilityScores(char.id, rollAbilityScores());
+
+        return char;
+    }
+
+    function buildRetainerSheet(opts) {
+        var name = opts.name || makeName();
+        var char = createObj('character', {
+            name: name,
+            inplayerjournals: 'all',
+            controlledby: opts.controlledby || ''
+        });
+
+        return applyRetainerAttrsToCharacter(char, opts, true);
+    }
+
+    function adoptExistingCharacterAsRetainer(character, opts) {
+        character.set({
+            inplayerjournals: 'all',
+            controlledby: opts.controlledby || ''
+        });
+        if (opts.name) character.set({ name: opts.name });
+        return applyRetainerAttrsToCharacter(character, opts, false);
+    }
+
+    function getRetainerRosterEntries(attrIndex) {
+        attrIndex = attrIndex || buildAttrIndex();
+        var chars = findObjs({ type: 'character' }) || [];
+        var out = [];
+
+        _.each(chars, function (c) {
+            var rt = indexedAttr(attrIndex, c.id, ATTR.RETAINER_TYPE);
+            if (rt !== '') {
+                out.push({
+                    character: c,
+                    attrs: attrIndex[c.id] || {}
+                });
+            }
+        });
+
+        return out;
+    }
+
+    function entryAttr(entry, name) {
+        return (entry && entry.attrs && typeof entry.attrs[name] !== 'undefined') ? entry.attrs[name] : '';
+    }
+
+    function activeHenchmenCount(employerId) {
+        var entries = getRetainerRosterEntries();
+        return _.filter(entries, function (e) {
+            return entryAttr(e, ATTR.EMPLOYER_ID) === employerId &&
+                normalizeText(entryAttr(e, ATTR.RETAINER_TYPE)) === 'henchman' &&
+                normalizeText(entryAttr(e, ATTR.STATUS)) === 'active';
+        }).length;
+    }
+
+    function labelForQuery(str) {
+        return String(str || '').replace(/[|,}]/g, ' ');
+    }
+
+    function getVisibleRetainerEntries(msg, attrIndex) {
+        var entries = getRetainerRosterEntries(attrIndex);
+        if (playerIsGM(msg.playerid)) return entries;
+        return _.filter(entries, function (e) {
+            return entryAttr(e, ATTR.EMPLOYER_PLAYER_ID) === msg.playerid;
+        });
+    }
+
+    function buildRetainerRefQuery(msg, attrIndex, promptText) {
+        var entries = getVisibleRetainerEntries(msg, attrIndex);
+        var pairs = _.chain(entries)
+            .map(function (e) {
+                return { label: labelForQuery(e.character.get('name') || ''), value: e.character.id };
+            })
+            .filter(function (o) { return o.label !== '' && o.value !== ''; })
+            .uniq(false, function (o) { return o.value; })
+            .sortBy(function (o) { return o.label.toLowerCase(); })
+            .value();
+
+        if (!pairs.length) return '?{' + (promptText || 'Retainer') + '|}';
+
+        return '?{' + (promptText || 'Retainer') + '|' +
+            _.map(pairs, function (o) { return o.label + ',' + o.value; }).join('|') + '}';
+    }
+
+    function buildEmployerRefQuery(msg, attrIndex, promptText) {
+        var chars = findObjs({ type: 'character' }) || [];
+        var pairs = _.chain(chars)
+            .filter(function (c) {
+                return indexedAttr(attrIndex, c.id, ATTR.RETAINER_TYPE) === '';
+            })
+            .filter(function (c) {
+                return !isLikelyNPC(c, attrIndex);
+            })
+            .filter(function (c) {
+                return playerIsGM(msg.playerid) || canPlayerControlCharacter(msg.playerid, c);
+            })
+            .map(function (c) {
+                return {
+                    label: labelForQuery(c.get('name') || ''),
+                    value: c.id
+                };
+            })
+            .filter(function (o) { return o.label !== '' && o.value !== ''; })
+            .uniq(false, function (o) { return o.value; })
+            .sortBy(function (o) { return o.label.toLowerCase(); })
+            .value();
+
+        if (!pairs.length) return '?{' + (promptText || 'Employer PC') + '|}';
+
+        return '?{' + (promptText || 'Employer PC') + '|' +
+            _.map(pairs, function (o) { return o.label + ',' + o.value; }).join('|') + '}';
+    }
+
+    function getVisibleCandidates(msg) {
+        var candidates = _.values(state[STATE].candidates);
+        if (playerIsGM(msg.playerid)) return candidates;
+        return _.filter(candidates, function (c) {
+            return c.employerPlayerId === msg.playerid;
+        });
+    }
+
+    function getEmployerMarketOptionsData(employerId) {
+        var data;
+
+        if (!employerId || !state[STATE].marketOptionsByEmployer) return null;
+        data = state[STATE].marketOptionsByEmployer[employerId];
+        if (!data) return null;
+
+        if (data === true) {
+            return {
+                enabled: true,
+                population: 0,
+                hirelingKeys: _.map(getStandardMarketEntries('hireling'), function (entry) { return subtypeKeyForEntry(entry); }),
+                expertKeys: _.map(getStandardMarketEntries('expert'), function (entry) { return subtypeKeyForEntry(entry); })
+            };
+        }
+
+        return data;
+    }
+
+    function hasEmployerMarketOptions(employerId) {
+        return !!getEmployerMarketOptionsData(employerId);
+    }
+
+    function setEmployerMarketOptions(employerId, data) {
+        if (!state[STATE].marketOptionsByEmployer) state[STATE].marketOptionsByEmployer = {};
+        if (!employerId) return;
+        if (data) state[STATE].marketOptionsByEmployer[employerId] = (data === true ? { enabled: true } : data);
+        else delete state[STATE].marketOptionsByEmployer[employerId];
+    }
+
+    function getScopeMarketOptionEmployerIds(msg, employer) {
+        var market = state[STATE].marketOptionsByEmployer || {};
+        var ids, chars;
+
+        if (employer) {
+            return hasEmployerMarketOptions(employer.id) ? [employer.id] : [];
+        }
+
+        ids = _.keys(market || {});
+        if (playerIsGM(msg.playerid)) return ids;
+
+        chars = findObjs({ type: 'character' }) || [];
+        return _.chain(chars)
+            .filter(function (c) {
+                return indexedAttr(buildAttrIndex(), c.id, ATTR.RETAINER_TYPE) === '';
+            })
+            .filter(function (c) {
+                return canPlayerControlCharacter(msg.playerid, c);
+            })
+            .map(function (c) { return c.id; })
+            .filter(function (id) { return !!market[id]; })
+            .value();
+    }
+
+
+    function candidateLabel(c) {
+        return labelForQuery(c.name + ' — ' + c.race + ' ' + c.className + ' ' + c.level + ' [' + c.id + ']');
+    }
+
+    function buildCandidateRefQuery(msg, promptText) {
+        var candidates = getVisibleCandidates(msg);
+
+        if (!candidates.length) return '?{' + (promptText || 'Candidate') + '|}';
+
+        return '?{' + (promptText || 'Candidate') + '|' +
+            _.map(_.sortBy(candidates, function (c) {
+                return (c.name || '').toLowerCase();
+            }), function (c) {
+                return candidateLabel(c) + ',' + c.id;
+            }).join('|') + '}';
+    }
+
+    function getVisiblePendingOffers(msg) {
+        var pending = _.values(state[STATE].pendingOffers);
+        if (playerIsGM(msg.playerid)) return pending;
+        return _.filter(pending, function (p) {
+            return p.employerPlayerId === msg.playerid;
+        });
+    }
+
+    function pendingLabel(p) {
+        return labelForQuery(p.sourceName + ' — ' + p.employerName + ' [' + p.id + ']');
+    }
+
+    function buildPendingRefQuery(msg, promptText) {
+        var pending = getVisiblePendingOffers(msg);
+
+        if (!pending.length) return '?{' + (promptText || 'Pending Offer') + '|}';
+
+        return '?{' + (promptText || 'Pending Offer') + '|' +
+            _.map(_.sortBy(pending, function (p) {
+                return (p.sourceName || '').toLowerCase();
+            }), function (p) {
+                return pendingLabel(p) + ',' + p.id;
+            }).join('|') + '}';
+    }
+
+    function isLikelyNPC(character, attrIndex) {
+        var isNpc = indexedAttr(attrIndex, character.id, CONFIG.sheetAttrs.isNpc);
+        var toggleNpc = indexedAttr(attrIndex, character.id, CONFIG.sheetAttrs.toggleNpc);
+        var controlled = character.get('controlledby') || '';
+
+        if (isNpc !== '') return parseBool(isNpc, false);
+        if (toggleNpc !== '') return parseBool(toggleNpc, false);
+        return controlled === '';
+    }
+
+    function getOfferNpcCharacters(attrIndex) {
+        var chars = findObjs({ type: 'character' }) || [];
+        return _.chain(chars)
+            .filter(function (c) {
+                return indexedAttr(attrIndex, c.id, ATTR.RETAINER_TYPE) === '';
+            })
+            .filter(function (c) {
+                return isLikelyNPC(c, attrIndex);
+            })
+            .sortBy(function (c) {
+                return String(c.get('name') || '').toLowerCase();
+            })
+            .value();
+    }
+
+    function buildNpcRefQuery(attrIndex, promptText) {
+        var npcs = getOfferNpcCharacters(attrIndex);
+
+        if (!npcs.length) return '?{' + (promptText || 'NPC') + '|}';
+
+        return '?{' + (promptText || 'NPC') + '|' +
+            _.map(npcs, function (c) {
+                return labelForQuery(c.get('name') || '') + ',' + c.id;
+            }).join('|') + '}';
+    }
+
+    function buildCandidateOfferCommand(candidate) {
+        return '!retainer-accept --pc|' + candidate.employerId +
+            ' --candidate|' + candidate.id +
+            ' --initial|?{Initial gp|100}' +
+            ' --share|?{Share %|10}' +
+            ' --quarters|?{Quarters|Yes,yes|No,no}' +
+            ' --magicitems|?{Magic item offered?|No,0|Yes,1}';
+    }
+
+    function buildPendingResolveCommand(pending) {
+        return '!retainer-resolve --offer|' + pending.id;
+    }
+
+    function renderCandidateEntry(msg, c) {
+        var buttons = '<div style="margin-top:4px;">' +
+            menuBtn('Make Offer', buildCandidateOfferCommand(c), CONFIG.sectionColors.recruit.bg, CONFIG.sectionColors.recruit.border, 84);
+
+        if (candidateDeleteAllowed(msg, c)) {
+            buttons += menuBtn('Delete', '!retainer-delete-candidate --candidate|' + c.id, CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 64);
+        }
+
+        buttons += '</div>';
+
+        return '<li><b>' + esc(c.id) + '</b> — ' + esc(c.name) + ' — ' + esc(c.race) + ' ' + esc(c.className) + ' ' + esc(c.level) + ' — employer: ' + esc(c.employerName) + buttons + '</li>';
+    }
+
+    function renderPendingEntry(p) {
+        var buttons = '<div style="margin-top:4px;">' +
+            menuBtn('Roll', buildPendingResolveCommand(p), CONFIG.sectionColors.recruit.bg, CONFIG.sectionColors.recruit.border, 56) +
+            '</div>';
+
+        return '<li><b>' + esc(p.id) + '</b> — ' + esc(p.sourceName) + ' — employer: ' + esc(p.employerName) + ' — delay: ' + esc(p.delayDays) + ' day(s)' + (p.reason ? ' — reason: ' + esc(p.reason) : '') + buttons + '</li>';
+    }
+
+    function candidateDeleteAllowed(msg, candidate) {
+        if (!candidate) return false;
+        if (playerIsGM(msg.playerid)) return true;
+        return candidate.employerPlayerId === msg.playerid;
+    }
+
+    function buildActiveSummaryHtml(msg, entries) {
+        var grouped = {};
+        var visibleEntries;
+        var keys;
+        var html = '';
+
+        visibleEntries = entries || getRetainerRosterEntries();
+
+        if (!playerIsGM(msg.playerid)) {
+            visibleEntries = _.filter(visibleEntries, function (e) {
+                return entryAttr(e, ATTR.EMPLOYER_PLAYER_ID) === msg.playerid;
+            });
+        }
+
+        visibleEntries = _.filter(visibleEntries, function (e) {
+            return normalizeText(entryAttr(e, ATTR.STATUS)) === 'active';
+        });
+
+        if (!visibleEntries.length) {
+            return '<div style="border-bottom:1px solid #555;padding-bottom:6px;margin-bottom:6px;">' +
+                '<div style="font-weight:bold;font-size:14px;color:#fff;margin-bottom:4px;">Retainers</div>' +
+                '<div style="color:#ddd;">No active retainers found.</div>' +
+                '</div>';
+        }
+
+        _.each(visibleEntries, function (e) {
+            var employerName = entryAttr(e, ATTR.EMPLOYER_NAME) || 'Unassigned';
+            if (!grouped[employerName]) grouped[employerName] = [];
+            grouped[employerName].push(e);
+        });
+
+        keys = _.keys(grouped).sort();
+
+        html += '<div style="border-bottom:1px solid #555;padding-bottom:6px;margin-bottom:6px;">';
+        html += '<div style="font-weight:bold;font-size:14px;color:#fff;margin-bottom:6px;">Retainers</div>';
+
+        _.each(keys, function (employerName) {
+            var group = grouped[employerName];
+            var employerId = entryAttr(group[0], ATTR.EMPLOYER_ID);
+            var totalDaily = 0;
+            var totalMonthly = 0;
+            var loyaltySum = 0;
+
+            _.each(group, function (e) {
+                totalDaily += parseNumber(entryAttr(e, ATTR.DAILY_WAGE_SP), 0);
+                totalMonthly += parseNumber(entryAttr(e, ATTR.MONTHLY_WAGE_GP), 0);
+                loyaltySum += parseNumber(entryAttr(e, ATTR.LOYALTY_CURRENT), 0);
+            });
+
+            html += '<div style="border-top:2px solid #1faa55;padding-top:6px;margin-top:6px;">';
+            html += '<div style="color:#fff;font-weight:bold;">' + esc(employerName) + (employerId ? ' ' + employerPayAllButton(employerId) : '') + '</div>';
+            html += '<div style="color:#ccc;font-size:12px;">' +
+                'Active: ' + group.length +
+                ' | Daily: ' + totalDaily + ' sp' +
+                ' | Monthly: ' + totalMonthly + ' gp' +
+                ' | Avg Loyalty: ' + (group.length ? Math.round(loyaltySum / group.length) : 0) +
+                '</div>';
+            html += '<div style="margin:4px 0 0 0;">';
+
+            _.each(_.sortBy(group, function (e) {
+                return (e.character.get('name') || '').toLowerCase();
+            }), function (e) {
+                var contractDays = entryAttr(e, ATTR.CONTRACT_DAYS);
+                var payPeriod = entryAttr(e, ATTR.PAY_PERIOD);
+                var contractPay = entryAttr(e, ATTR.CONTRACT_PAY_GP);
+                html += '<div style="margin:4px 0;padding:3px 0;border-top:1px dotted #333;">' +
+                    '<div style="color:#ddd;">' +
+                    '<b>' + esc(e.character.get('name')) + '</b>' +
+                    ' — ' + esc(entryAttr(e, ATTR.RETAINER_TYPE)) +
+                    (entryAttr(e, ATTR.RETAINER_SUBTYPE) ? ' (' + esc(entryAttr(e, ATTR.RETAINER_SUBTYPE)) + ')' : '') +
+                    ' — ' + esc(formatWage(entryAttr(e, ATTR.DAILY_WAGE_SP), entryAttr(e, ATTR.MONTHLY_WAGE_GP))) +
+                    (contractPay && contractPay !== '0' ? ' — Pay Due ' + esc(contractPay) + ' gp' : '') +
+                    ' — Loyalty ' + esc(entryAttr(e, ATTR.LOYALTY_CURRENT) || '0') +
+                    (contractDays && String(contractDays) !== '0' ? ' — ' + esc(contractDays) + ' day(s)' : '') +
+                    (payPeriod ? ' (' + esc(payPeriod) + ')' : '') +
+                    (entryAttr(e, ATTR.ASSIGNMENT) ? ' — ' + esc(entryAttr(e, ATTR.ASSIGNMENT)) : '') +
+                    '</div>' +
+                    '<div style="margin-top:2px;">' + retainerManageButton(e.character.id) + retainerPayButton(e.character.id) + retainerLoyaltyAdjustButton(e.character.id) + '</div>' +
+                    '</div>';
+            });
+
+            html += '</div></div>';
+        });
+
+        html += '</div>';
+        return html;
+    }
+
+
+    function getStandardMarketEntries(type) {
+        var seen = {};
+        return _.chain(_.values(CONFIG.wageTable))
+            .filter(function (entry) { return entry.type === type; })
+            .filter(function (entry) {
+                var key = entry.label + '|' + (entry.monthlyGp || '') + '|' + (entry.dailySp || '');
+                if (seen[key]) return false;
+                seen[key] = true;
+                return true;
+            })
+            .sortBy(function (entry) { return String(entry.label || '').toLowerCase(); })
+            .value();
+    }
+
+    function subtypeKeyForEntry(entry) {
+        var match = _.find(_.keys(CONFIG.wageTable), function (k) {
+            var e = CONFIG.wageTable[k];
+            return e.type === entry.type &&
+                e.label === entry.label &&
+                (e.monthlyGp || 0) === (entry.monthlyGp || 0) &&
+                (e.dailySp || 0) === (entry.dailySp || 0);
+        });
+        return match || '';
+    }
+
+    function isAlwaysAvailableSmallTownExpertKey(subtypeKey) {
+        var key = normalizeText(subtypeKey || '');
+        return key === 'blacksmith' || key === 'jewelergemcutter' || key === 'jeweler' || key === 'gemcutter';
+    }
+
+    function generateMarketOptionsData(population) {
+        var hirelingKeys = _.map(getStandardMarketEntries('hireling'), function (entry) {
+            return subtypeKeyForEntry(entry);
+        });
+        var expertKeys = _.chain(getStandardMarketEntries('expert'))
+            .filter(function (entry) {
+                var key = subtypeKeyForEntry(entry);
+
+                if ((parseIntSafe(population, 0) || 0) > 500) return true;
+                if (isAlwaysAvailableSmallTownExpertKey(key)) return true;
+                return pctRoll() <= 20;
+            })
+            .map(function (entry) {
+                return subtypeKeyForEntry(entry);
+            })
+            .value();
+
+        return {
+            enabled: true,
+            population: parseIntSafe(population, 0) || 0,
+            hirelingKeys: hirelingKeys,
+            expertKeys: expertKeys
+        };
+    }
+
+    function getEmployerMarketEntries(employer, type) {
+        var entries = getStandardMarketEntries(type);
+        var data = employer ? getEmployerMarketOptionsData(employer.id) : null;
+        var allowed;
+
+        if (!data) return entries;
+
+        allowed = type === 'expert' ? data.expertKeys : data.hirelingKeys;
+        if (!_.isArray(allowed)) return entries;
+
+        return _.filter(entries, function (entry) {
+            return _.contains(allowed, subtypeKeyForEntry(entry));
+        });
+    }
+
+    function buildStandardPrepareCommand(employerId, entry, detailed) {
+        var cmd = '!retainer-prepare-standard --pc|' + employerId +
+            ' --type|' + entry.type +
+            ' --subtype|' + subtypeKeyForEntry(entry) +
+            ' --name|' + randomNameQuery('Name') +
+            ' --days|?{Days of service|7}' +
+            ' --status|active --xpmode|none';
+
+        if (detailed) {
+            cmd += ' --race|?{Race|Human} --npclevel|?{Level|1}';
+        }
+
+        if (entry.type === 'expert') {
+            cmd += ' --monthlygp|?{Monthly gp override (0 = table rate)|0}';
+        }
+
+        return cmd;
+    }
+
+    function buildStandardMarketOptionsHtml(employer) {
+        var hirelings, experts, html = '';
+        var marketData = employer ? getEmployerMarketOptionsData(employer.id) : null;
+
+        if (!employer) return '<div style="color:#ccc;">Select an employer token first.</div>';
+
+        if (marketData && marketData.population > 0 && marketData.population <= 500) {
+            html += '<div style="color:#ccc;margin-bottom:6px;">Population 500 or less: most experts appear only on a 20% chance. Blacksmith and Jeweler-Gemcutter remain available.</div>';
+        }
+
+        hirelings = _.map(getEmployerMarketEntries(employer, 'hireling'), function (entry) {
+            return '<li><b>' + esc(entry.label) + '</b> — ' + esc(formatWage(entry.dailySp, entry.monthlyGp)) +
+                '<div style="margin-top:4px;">' +
+                    menuBtn('Make Offer', buildStandardPrepareCommand(employer.id, entry, true), CONFIG.sectionColors.add.bg, CONFIG.sectionColors.add.border, 96) +
+                '</div></li>';
+        }).join('');
+
+        experts = _.map(getEmployerMarketEntries(employer, 'expert'), function (entry) {
+            return '<li><b>' + esc(entry.label) + '</b> — ' + esc(formatWage(entry.dailySp, entry.monthlyGp)) +
+                '<div style="margin-top:4px;">' +
+                    menuBtn('Make Offer', buildStandardPrepareCommand(employer.id, entry, true), CONFIG.sectionColors.add.bg, CONFIG.sectionColors.add.border, 96) +
+                '</div></li>';
+        }).join('');
+
+        if (hirelings) {
+            html += '<div><b>Hireling options</b><ul style="margin:4px 0 8px 18px;">' + hirelings + '</ul></div>';
+        }
+        if (experts) {
+            html += '<div><b>Expert options</b><ul style="margin:4px 0 0 18px;">' + experts + '</ul></div>';
+        } else {
+            html += '<div><b>Expert options</b><div style="color:#ccc;margin-top:4px;">No other experts were available from this market search.</div></div>';
+        }
+
+        return html;
+    }
+
+    function rollOfferDelayDays(retainerType) {
+        return normalizeText(retainerType || '') === 'henchman' ? randomInt(2, 8) : randomInt(0, 4);
+    }
+
+    function buildRecruitmentHirelingHtml(employer) {
+        var standard = _.map(getEmployerMarketEntries(employer, 'hireling'), function (entry) {
+            return '<li><b>' + esc(entry.label) + '</b> — ' + esc(formatWage(entry.dailySp, entry.monthlyGp)) + '</li>';
+        });
+        var expert = _.map(getEmployerMarketEntries(employer, 'expert'), function (entry) {
+            return '<li><b>' + esc(entry.label) + '</b> — ' + esc(formatWage(entry.dailySp, entry.monthlyGp)) + '</li>';
+        });
+
+        return '<div><b>Hireling options</b><ul style="margin:4px 0 8px 18px;">' + standard.join('') + '</ul></div>' +
+            '<div><b>Expert options</b>' +
+            (expert.length ? '<ul style="margin:4px 0 0 18px;">' + expert.join('') + '</ul>' : '<div style="color:#ccc;margin-top:4px;">No other experts were available from this market search.</div>') +
+            '</div>';
+    }
+
+    function buildClearCandidatesCommand(args) {
+        var cmd = '!retainer-clear-candidates';
+        if (args && args.pc) cmd += ' --pc|' + args.pc;
+        if (args && args.employer) cmd += ' --employer|' + args.employer;
+        return cmd;
+    }
+
+    function computeInterest(opts) {
+        var initialPayment = parseMoney(opts.initialPayment, 0);
+        var npcLevel = parseIntSafe(opts.npcLevel, 1) || 1;
+        var baseRequired = npcLevel * 100;
+        var interest = 0;
+        var details = [];
+
+        if (initialPayment >= baseRequired) {
+            interest += 25;
+            details.push('Initial payment meets minimum (' + baseRequired + ' gp): +25%');
+            var extras = Math.floor((initialPayment - baseRequired) / 100);
+            var extraBonus = Math.min(30, extras * 10);
+            if (extraBonus > 0) {
+                interest += extraBonus;
+                details.push('Additional 100 gp increments: +' + extraBonus + '%');
+            }
+        } else {
+            details.push('Initial payment below minimum (' + baseRequired + ' gp): +0%');
+        }
+
+        if (parseBool(opts.completeEquipment, true)) details.push('Complete equipment stated: +0% (required condition)');
+        else details.push('Complete equipment not confirmed: +0%');
+
+        if (opts.quartersSupport) {
+            interest += 5;
+            details.push('Quarters and support: +5%');
+        } else {
+            interest -= 25;
+            details.push('No quarters and support: -25%');
+        }
+
+        var magicItems = parseIntSafe(opts.magicItems, 0) || 0;
+        if (magicItems > 0) {
+            var magicBonus = magicItems * 15;
+            interest += magicBonus;
+            details.push('Magic items (' + magicItems + '): +' + magicBonus + '%');
+        }
+
+        var dmMod = parseIntSafe(opts.dmMod, 0) || 0;
+        if (dmMod !== 0) {
+            interest += dmMod;
+            details.push('DM modifier' + (opts.dmReason ? ' (' + opts.dmReason + ')' : '') + ': ' + (dmMod > 0 ? '+' : '') + dmMod + '%');
+        }
+
+        return { interest: interest, details: details, shareCategory: opts.shareCategory };
+    }
+
+    function createPendingOffer(employer, sourceName, sourceData, opts, delayDays, reason, actorPlayerId) {
+        var pendingId = 'P' + state[STATE].nextPendingId++;
+        state[STATE].pendingOffers[pendingId] = {
+            id: pendingId,
+            employerId: employer.id,
+            employerName: employer.get('name'),
+            employerPlayerId: opts.playerid || actorPlayerId || '',
+            sourceName: sourceName,
+            sourceData: sourceData,
+            opts: opts,
+            delayDays: delayDays,
+            reason: reason || randomDelayReason()
+        };
+        return state[STATE].pendingOffers[pendingId];
+    }
+
+    function buildOfferOptions(msg, employer, args, sourceData, defaultType, defaultSubtype, hireMethod) {
+        var employerPlayerId = getEmployerPlayerId(employer, msg.playerid);
+        var sharePct = Math.max(0, parseNumber(args.share, 0));
+        var shareCategory = getShareCategory(args, sharePct);
+        var wages = resolveWage(args.subtype || defaultSubtype, args);
+
+        return {
+            args: args,
+            playerid: employerPlayerId,
+            retainerType: args.type || defaultType,
+            subType: args.subtype || defaultSubtype || '',
+            hireMethod: hireMethod,
+            status: args.status || 'active',
+            xpMode: args.xpmode || defaultXpModeForType(args.type || 'hireling'),
+            dailyWageSp: wages.dailySp,
+            monthlyWageGp: wages.monthlyGp,
+            wageSource: wages.source,
+            initialPayment: parseMoney(args.initial, 0),
+            sharePct: sharePct,
+            shareCategory: shareCategory,
+            magicDivision: args.magicdivision || '',
+            quartersSupport: parseBool(args.quarters, true),
+            equipment: args.equipment || '',
+            completeEquipment: parseBool(args.completeequipment, true),
+            magicItems: parseIntSafe(args.magicitems, 0) || 0,
+            assignment: args.assignment || '',
+            dmMod: parseIntSafe(args.dmmod, 0) || 0,
+            dmReason: args.dmreason || '',
+            override: args.override || '',
+            delayDays: parseIntSafe(args.delaydays, 0) || 0,
+            offerNotes: args.notes || '',
+            loyaltyNotes: args.loyaltynotes || '',
+            npcLevel: sourceData.level || 1,
+            className: sourceData.className || '',
+            race: sourceData.race || '',
+            contractDays: parseIntSafe(args.days, 0) || 0,
+            payPeriod: args.payperiod || '',
+            hireBonusPct: parseIntSafe(args.bonuspct, 0) || 0,
+            contractPayGp: parseMoney(args.contractpaygp, 0)
+        };
+    }
+
+
+    function buildExtensionCommand(retainer, employer) {
+        var retainerId = retainer.id;
+        var retainerType = normalizeText(getAttr(retainer.id, ATTR.RETAINER_TYPE) || 'hireling');
+        var command = '!retainer-extend-contract --id|' + retainerId +
+            ' --days|?{Days to extend|30}';
+
+        if (retainerType === 'hireling' || retainerType === 'expert') {
+            command += ' --bonuspct|' + buildHireBonusQuery(employer || getCharacterByRef(getAttr(retainer.id, ATTR.EMPLOYER_ID)), retainerType);
+        }
+
+        return command;
+    }
+
+    function completeContractExtension(msg, employer, retainer, days, bonusPct) {
+        var retainerType = getAttr(retainer.id, ATTR.RETAINER_TYPE) || 'hireling';
+        var wages = {
+            dailySp: getNumAttr(retainer.id, ATTR.DAILY_WAGE_SP, 0),
+            monthlyGp: getNumAttr(retainer.id, ATTR.MONTHLY_WAGE_GP, 0),
+            source: getAttr(retainer.id, ATTR.WAGE_SOURCE) || 'custom',
+            label: getAttr(retainer.id, ATTR.RETAINER_SUBTYPE) || ''
+        };
+        var reactionPct = employer ? getReactionBonusPct(employer) : 0;
+        var successCap = standardEmploymentSuccessCap(retainerType);
+        var roll = randomInt(1, 100);
+        var accepted;
+        var contractGp = cpToGp(contractBaseCp(retainerType, wages, days));
+        var body;
+        var baseChancePct;
+        var finalChancePct;
+        var bonusCp = 0;
+        var bonusText = '';
+        var paymentResult;
+        var isStandard = _.contains(['hireling', 'expert'], normalizeText(retainerType));
+
+        bonusPct = clamp(parseIntSafe(bonusPct, getNumAttr(retainer.id, ATTR.HIRE_BONUS_PCT, 0)) || 0, 0, 100);
+
+        if (isStandard) {
+            baseChancePct = days > 7 ? basePercentFromBonusPct(bonusPct) : successCap;
+            finalChancePct = days > 7 ? clamp(baseChancePct + reactionPct, 0, successCap) : successCap;
+            bonusCp = standardUpfrontBonusCp(wages, bonusPct, days);
+            bonusText = days <= 7 ? 'No upfront bonus required for 7 days or fewer.' : (bonusPct + '% of monthly rate');
+        } else {
+            baseChancePct = clamp(getNumAttr(retainer.id, ATTR.LOYALTY_CURRENT, 50), 0, successCap);
+            finalChancePct = clamp(baseChancePct + reactionPct, 0, successCap);
+        }
+
+        accepted = roll <= finalChancePct;
+
+        if (!accepted) {
+            body = line('Employer', esc(employer.get('name'))) +
+                line('Retainer', esc(retainer.get('name'))) +
+                line('Days requested', days) +
+                (isStandard ? line('Upfront bonus', bonusText + (bonusCp > 0 ? ' = ' + formatCpAsCoins(bonusCp) : ' = none')) : '') +
+                line('Base chance', baseChancePct + '%') +
+                line('Reaction modifier', (reactionPct >= 0 ? '+' : '') + reactionPct + '%') +
+                line('Final chance', finalChancePct + '%') +
+                line('Die roll', roll) +
+                line('Result', '<span style="color:#ff6666;font-weight:bold;">Declined extension</span>');
+            send(box('Contract Extension', body), msg.who, msg.playerid);
+            return;
+        }
+
+        if (isStandard && bonusCp > 0) {
+            paymentResult = deductCoins(employer, bonusCp);
+            if (!paymentResult.ok) {
+                body = line('Employer', esc(employer.get('name'))) +
+                    line('Retainer', esc(retainer.get('name'))) +
+                    line('Required upfront bonus', formatCpAsCoins(bonusCp)) +
+                    line('Current coins', formatCoinBundle(paymentResult.before)) +
+                    line('Result', '<span style="color:#ff6666;font-weight:bold;">Not enough coin on the employer sheet.</span>');
+                send(box('Contract Extension Failed', body), msg.who, msg.playerid);
+                return;
+            }
+        }
+
+        setAttr(retainer.id, ATTR.CONTRACT_DAYS, days);
+        if (isStandard) setAttr(retainer.id, ATTR.HIRE_BONUS_PCT, bonusPct);
+        setAttr(retainer.id, ATTR.CONTRACT_PAY_GP, formatNumber2(contractGp));
+        setAttr(retainer.id, ATTR.STATUS, 'active');
+
+        body = line('Employer', esc(employer.get('name'))) +
+            line('Retainer', esc(retainer.get('name'))) +
+            line('Days extended', days) +
+            line('Contract pay due', contractGp > 0 ? formatCpAsCoins(gpToCp(contractGp)) : 'none set') +
+            (isStandard ? line('Upfront bonus', bonusText + (bonusCp > 0 ? ' = ' + formatCpAsCoins(bonusCp) : ' = none')) : '') +
+            line('Base chance', baseChancePct + '%') +
+            line('Reaction modifier', (reactionPct >= 0 ? '+' : '') + reactionPct + '%') +
+            line('Final chance', finalChancePct + '%') +
+            line('Die roll', roll) +
+            line('Result', '<span style="color:#66ff66;font-weight:bold;">Accepted extension</span>');
+        send(box('Contract Extension', body), msg.who, msg.playerid);
+    }
+
+    function handleExtendContract(msg, args) {
+        var retainer = getRetainerByRef(msg, args);
+        var employer;
+        var retainerType;
+        var days;
+        var delayDays;
+        var pending;
+
+        if (!requireRetainerManage(msg, retainer)) return;
+
+        retainerType = normalizeText(getAttr(retainer.id, ATTR.RETAINER_TYPE));
+        if (retainerType === 'npc') {
+            send(box('Contract Extension', line('Retainer', esc(retainer.get('name'))) + line('Result', 'NPC entries do not use contract extension offers.')), msg.who, msg.playerid);
+            return;
+        }
+
+        employer = getCharacterByRef(getAttr(retainer.id, ATTR.EMPLOYER_ID));
+        if (!requireControl(msg, employer, 'employer character')) return;
+
+        days = Math.max(1, parseIntSafe(args.days, getNumAttr(retainer.id, ATTR.CONTRACT_DAYS, 30) || 30) || 30);
+        delayDays = args.pendingid ? 0 : rollOfferDelayDays(retainerType);
+
+        if (delayDays > 0) {
+            pending = createPendingOffer(employer, retainer.get('name'), {
+                retainerId: retainer.id
+            }, {
+                pendingMode: 'extend',
+                retainerId: retainer.id,
+                days: days,
+                bonuspct: clamp(parseIntSafe(args.bonuspct, getNumAttr(retainer.id, ATTR.HIRE_BONUS_PCT, 0)) || 0, 0, 100),
+                playerid: getEmployerPlayerId(employer, msg.playerid)
+            }, delayDays, randomDelayReason(), getEmployerPlayerId(employer, msg.playerid));
+            send(box('Contract Extension Delayed',
+                line('Employer', esc(employer.get('name'))) +
+                line('Retainer', esc(retainer.get('name'))) +
+                line('Delay', delayDays + ' day(s)') +
+                line('Reason', esc(pending.reason))
+            ), msg.who, msg.playerid);
+            return;
+        }
+
+        if (args.pendingid && state[STATE].pendingOffers[args.pendingid]) delete state[STATE].pendingOffers[args.pendingid];
+        completeContractExtension(msg, employer, retainer, days, args.bonuspct);
+    }
+
+    function finalizeRetainerFromOffer(msg, employer, sourceName, sourceData, opts) {
+        var employerPlayerId = opts.playerid || getEmployerPlayerId(employer, msg.playerid);
+        var interestInfo, reactionAdj, loyaltyAdj, target, roll, accepted, loyaltyBase, body, retainerType, retainer, maxHenchmen, currentHenchmen;
+        var upfrontCp = gpToCp(opts.initialPayment || 0);
+        var bonusCp = 0;
+        var paymentResult;
+
+        opts.playerid = employerPlayerId;
+
+        if (normalizeText(opts.override) === 'delay' || parseIntSafe(opts.delayDays, 0) > 0) {
+            var pending = createPendingOffer(employer, sourceName, sourceData, opts, parseIntSafe(opts.delayDays, 1) || 1, opts.dmReason || '', employerPlayerId);
+            send(box('Retainer Offer Delayed',
+                line('Employer', esc(employer.get('name'))) +
+                line('Target', esc(sourceName)) +
+                line('Pending ID', esc(pending.id)) +
+                line('Delay', esc(pending.delayDays) + ' day(s)') +
+                line('Reason', esc(opts.dmReason || 'No reason entered.'))
+            ), msg.who, msg.playerid);
+            return;
+        }
+
+        interestInfo = computeInterest(opts);
+        reactionAdj = getPCReactionAdj(employer, opts.args || {});
+        loyaltyAdj = getPCLoyaltyAdj(employer, opts.args || {});
+        target = Math.max(0, Math.min(95, interestInfo.interest + reactionAdj));
+        roll = pctRoll();
+
+        if (normalizeText(opts.override) === 'accept') accepted = true;
+        else if (normalizeText(opts.override) === 'decline') accepted = false;
+        else accepted = roll <= target;
+
+        loyaltyBase = 50 + loyaltyAdj;
+
+        if (accepted) {
+            if ((opts.hireBonusPct || 0) > 0 && (opts.monthlyWageGp || 0) > 0) {
+                bonusCp = Math.round(gpToCp(opts.monthlyWageGp) * ((opts.hireBonusPct || 0) / 100));
+            }
+            paymentResult = deductCoins(employer, upfrontCp + bonusCp);
+            if (!paymentResult.ok) {
+                send(box(
+                    'Retainer Offer Failed',
+                    line('Employer', esc(employer.get('name'))) +
+                    line('Required payment', formatCpAsCoins(upfrontCp + bonusCp)) +
+                    line('Current coins', formatCoinBundle(paymentResult.before)) +
+                    '<div style="color:#ff6666;font-weight:bold;margin-top:6px;">Not enough coin on the employer sheet.</div>'
+                ), msg.who, msg.playerid);
+                return;
+            }
+        }
+
+        body = '' +
+            line('Employer', esc(employer.get('name'))) +
+            line('Target', esc(sourceName)) +
+            line('Interest subtotal', interestInfo.interest + '%') +
+            line('Reaction adjustment', (reactionAdj > 0 ? '+' : '') + reactionAdj + '%') +
+            line('Acceptance target', target + '%') +
+            line('Roll', normalizeText(opts.override) === 'accept' || normalizeText(opts.override) === 'decline' ? 'not rolled (' + esc(opts.override) + ')' : roll) +
+            line('Result', accepted ? '<span style="color:#66ff66;font-weight:bold;">Accepted</span>' : '<span style="color:#ff6666;font-weight:bold;">Declined</span>') +
+            '<hr style="border-color:#555;" /><div><b>Offer breakdown</b><ul style="margin:4px 0 0 18px;">' +
+            _.map(interestInfo.details, function (d) { return '<li>' + esc(d) + '</li>'; }).join('') +
+            '</ul></div>';
+
+        if (accepted) {
+            retainerType = opts.retainerType || 'henchman';
+            retainer = buildRetainerSheet({
+                name: sourceName,
+                employer: employer,
+                playerid: employerPlayerId,
+                controlledby: employerPlayerId,
+                retainerType: retainerType,
+                subType: opts.subType || '',
+                hireMethod: opts.hireMethod || 'market',
+                status: opts.status || 'active',
+                xpMode: opts.xpMode || defaultXpModeForType(retainerType),
+                dailyWageSp: opts.dailyWageSp || 0,
+                monthlyWageGp: opts.monthlyWageGp || 0,
+                wageSource: opts.wageSource || 'custom',
+                initialPayment: formatNumber2(cpToGp(upfrontCp + bonusCp)),
+                sharePct: opts.sharePct || 0,
+                shareCategory: interestInfo.shareCategory,
+                magicDivision: opts.magicDivision || '',
+                quartersSupport: !!opts.quartersSupport,
+                equipment: opts.equipment || '',
+                magicItems: opts.magicItems || 0,
+                assignment: opts.assignment || '',
+                loyaltyBase: loyaltyBase,
+                loyaltyCurrent: loyaltyBase,
+                loyaltyNotes: opts.loyaltyNotes || '',
+                dmMod: opts.dmMod || 0,
+                dmReason: opts.dmReason || '',
+                offerNotes: opts.offerNotes || '',
+                npcLevel: sourceData.level || opts.npcLevel || 1,
+                className: sourceData.className || opts.className || '',
+                race: sourceData.race || opts.race || '',
+                contractDays: opts.contractDays || 0,
+                payPeriod: opts.payPeriod || '',
+                hireBonusPct: opts.hireBonusPct || 0,
+                contractPayGp: opts.contractPayGp || 0
+            });
+
+            maxHenchmen = getMaximumHenchmen(employer);
+            currentHenchmen = activeHenchmenCount(employer.id);
+
+            body += '<hr style="border-color:#555;" />' +
+                line('Created retainer sheet', esc(retainer.get('name'))) +
+                line('Controller', esc(getDisplayName(employerPlayerId))) +
+                line('Visible to', 'All players') +
+                line('Loyalty base/current', loyaltyBase + ' / ' + loyaltyBase) +
+                line('XP mode', esc(opts.xpMode || defaultXpModeForType(retainerType)));
+
+            if (upfrontCp + bonusCp > 0) {
+                body += line('Upfront payment', formatCpAsCoins(upfrontCp + bonusCp)) +
+                    line('Coins before', formatCoinBundle(paymentResult.before)) +
+                    line('Coins after', formatCoinBundle(paymentResult.after));
+            }
+
+            if (normalizeText(retainerType) === 'henchman' && maxHenchmen > 0) {
+                body += line('Employer henchmen', currentHenchmen + ' of ' + maxHenchmen);
+                if (currentHenchmen > maxHenchmen) {
+                    body += '<div style="color:#ff6666;font-weight:bold;">Warning: employer now exceeds maximum henchmen.</div>';
+                }
+            }
+
+            if (opts.candidateId && state[STATE].candidates[opts.candidateId]) delete state[STATE].candidates[opts.candidateId];
+            if (opts.pendingId && state[STATE].pendingOffers[opts.pendingId]) delete state[STATE].pendingOffers[opts.pendingId];
+        } else {
+            if (opts.candidateId && state[STATE].candidates[opts.candidateId]) delete state[STATE].candidates[opts.candidateId];
+            if (opts.pendingId && state[STATE].pendingOffers[opts.pendingId]) delete state[STATE].pendingOffers[opts.pendingId];
+        }
+
+        send(box('Retainer Offer Result', body), msg.who, msg.playerid);
+    }
+
+    function handleSeek(msg, args) {
+        var employer = getEmployerCharacter(msg, args);
+        var population;
+        var responseRate = CONFIG.defaultResponseRatePct;
+        var incidence = CONFIG.seekIncidence;
+        var useNotices, useCrier, useAgents, taverns, tavernFee;
+        var noticesEff = 0, crierEff = 0, agentsEff = 0, tavernEff = 0;
+        var tavernRaw = 0, tavernPenalty = 0;
+        var methodsUsed = 0, overlapPenalty = 0;
+        var totalEligible = 0, applicants = 0;
+        var coverageRaw = 0, finalCoverage = 0;
+        var cost = 0, responseWindow = 0;
+        var raceBands, generated = [], i, feeSteps, j, estEff;
+        var perDay = [], basePerDay = 0, remainder = 0, k, body;
+        var marketOptionsData;
+        var dayLines = [];
+        var details = [];
+        var paymentResult;
+
+        if (!requireControl(msg, employer, 'employer character')) return;
+
+        population = parseIntSafe(args.population, 0) || 0;
+        if (!population) {
+            send('Use --population|<number>.', msg.who, msg.playerid);
+            return;
+        }
+
+        useNotices = parseBool(args.notices, false);
+        useCrier = parseBool(args.crier, false);
+        useAgents = parseBool(args.agents, false);
+        taverns = Math.max(0, Math.min(10, parseIntSafe(args.taverns, 0) || 0));
+        tavernFee = Math.max(10, Math.min(50, parseMoney(args.tavernfee, 20)));
+
+        if (useNotices) {
+            noticesEff = randomInt(10, 40);
+            cost += 50;
+            methodsUsed += 1;
+            details.push('Posting notices: ' + noticesEff + '% for 50 gp');
+        }
+
+        if (useCrier) {
+            crierEff = randomInt(1, 10);
+            cost += 10;
+            methodsUsed += 1;
+            details.push('Hiring a crier: ' + crierEff + '% for 10 gp');
+        }
+
+        if (useAgents) {
+            agentsEff = randomInt(20, 50);
+            cost += 300;
+            methodsUsed += 1;
+            details.push('Hiring agents: ' + agentsEff + '% for 300 gp');
+        }
+
+        if (taverns > 0) {
+            methodsUsed += 1;
+            feeSteps = Math.max(1, Math.min(5, Math.floor(tavernFee / 10)));
+
+            for (i = 0; i < taverns; i++) {
+                estEff = 0;
+                for (j = 0; j < feeSteps; j++) estEff += randomInt(1, 4);
+                tavernRaw += estEff;
+            }
+
+            tavernPenalty = Math.max(0, taverns - 1);
+            tavernEff = Math.max(0, tavernRaw - tavernPenalty);
+            cost += taverns * tavernFee;
+
+            details.push('Inns/taverns: raw ' + tavernRaw + '% - ' + tavernPenalty + '% overlap = ' +
+                tavernEff + '% for ' + taverns + ' establishment(s) at ' + tavernFee +
+                ' gp each (' + (taverns * tavernFee) + ' gp total)');
+        }
+
+        paymentResult = deductCoins(employer, gpToCp(cost));
+        if (!paymentResult.ok) {
+            send(box(
+                'Recruitment Failed',
+                line('Employer', esc(employer.get('name'))) +
+                line('Recruitment cost', formatCpAsCoins(gpToCp(cost))) +
+                line('Current coins', formatCoinBundle(paymentResult.before)) +
+                '<div style="color:#ff6666;font-weight:bold;margin-top:6px;">Not enough coin on the employer sheet.</div>'
+            ), msg.who, msg.playerid);
+            return;
+        }
+
+        coverageRaw = noticesEff + crierEff + agentsEff + tavernEff;
+        overlapPenalty = Math.max(0, (methodsUsed - 1) * 5);
+        finalCoverage = Math.max(0, coverageRaw - overlapPenalty);
+
+        totalEligible = Math.max(0, Math.floor(population / incidence));
+        applicants = Math.max(0, Math.round(totalEligible * (finalCoverage / 100) * (responseRate / 100)));
+
+        responseWindow = responseWindowFromPopulation(population);
+        basePerDay = responseWindow > 0 ? Math.floor(applicants / responseWindow) : 0;
+        remainder = responseWindow > 0 ? (applicants % responseWindow) : 0;
+
+        for (k = 0; k < responseWindow; k++) {
+            perDay[k] = basePerDay + (k < remainder ? 1 : 0);
+        }
+
+        raceBands = normalizeRaceDistribution(parseDistribution(args.races));
+        for (i = 0; i < applicants; i++) {
+            generated.push(buildCandidate(employer, getEmployerPlayerId(employer, msg.playerid), raceBands));
+        }
+
+        for (k = 0; k < perDay.length; k++) {
+            dayLines.push('<li>Day ' + (k + 1) + ': ' + perDay[k] + '</li>');
+        }
+
+        marketOptionsData = generateMarketOptionsData(population);
+        if (population <= 500) {
+            details.push('Small population expert limit: experts other than Blacksmith and Jeweler-Gemcutter appear only on a 20% chance.');
+        }
+        if (population >= 5001 && population <= 8000) {
+            details.push('Population 5001-8000 uses a 1d10 day response window.');
+        }
+        if (employer && employer.id) setEmployerMarketOptions(employer.id, marketOptionsData);
+
+        body = '' +
+            line('Employer', esc(employer.get('name'))) +
+            line('Population', population) +
+            line('Eligible prospects', totalEligible + ' (1 in 1000 baseline)') +
+            line('Coverage before combination penalty', coverageRaw + '%') +
+            line('Combination penalty', '-' + overlapPenalty + '%') +
+            line('Final coverage', finalCoverage + '%') +
+            line('Applicant response rate', '65% fixed') +
+            line('Total applicants', applicants) +
+            line('Response window', responseWindow + ' day(s), rolled by API from population size') +
+            line('Recruitment cost', formatCpAsCoins(gpToCp(cost))) +
+            line('Coins before', formatCoinBundle(paymentResult.before)) +
+            line('Coins after', formatCoinBundle(paymentResult.after)) +
+            '<hr style="border-color:#555;" /><div><b>Method details</b><ul style="margin:4px 0 0 18px;">' +
+            _.map(details, function (d) { return '<li>' + esc(d) + '</li>'; }).join('') +
+            '</ul></div>' +
+            '<hr style="border-color:#555;" /><div><b>Applicants by day</b><ul style="margin:4px 0 0 18px;">' + dayLines.join('') + '</ul></div>';
+
+        if (generated.length) {
+            body += '<hr style="border-color:#555;" /><div><b>Henchman candidates created</b>' +
+                '<div style="margin:6px 0 8px 0;">' +
+                    removeCandidatesBtn(buildClearCandidatesCommand({ pc: employer.id }), 118) +
+                '</div><ul style="margin:4px 0 0 18px;">' +
+                _.map(generated, function (c) { return renderCandidateEntry(msg, c); }).join('') + '</ul></div>';
+        }
+
+        body += '<hr style="border-color:#555;" /><div><b>Market hireling and expert options</b></div>' + buildStandardMarketOptionsHtml(employer);
+
+        body += '<hr style="border-color:#555;" />' + buildRecruitmentHirelingHtml(employer);
+
+        send(box('Retainer Market Search', body), msg.who, msg.playerid);
+    }
+
+    function handleCandidates(msg, args) {
+        var employer = args.pc || args.employer ? getCharacterByRef(args.pc || args.employer) : null;
+        var candidateId = args.candidate || '';
+        var candidates = getVisibleCandidates(msg);
+        var candidate;
+        var candidateHtml;
+        var body = '';
+        var showMarketOptions = employer && hasEmployerMarketOptions(employer.id);
+
+        if (employer) {
+            candidates = _.filter(candidates, function (c) {
+                return c.employerId === employer.id;
+            });
+        }
+
+        if (candidateId) {
+            candidate = state[STATE].candidates[candidateId];
+            if (!candidate) {
+                send(box('Retainer Candidates and Market Options', 'Candidate not found.'), msg.who, msg.playerid);
+                return;
+            }
+            if (!playerIsGM(msg.playerid) && candidate.employerPlayerId !== msg.playerid) {
+                send(box('Retainer Candidates and Market Options', 'Candidate not found.'), msg.who, msg.playerid);
+                return;
+            }
+            if (employer && candidate.employerId !== employer.id) {
+                send(box('Retainer Candidates and Market Options', 'Candidate not found for that employer.'), msg.who, msg.playerid);
+                return;
+            }
+            candidates = [candidate];
+        }
+
+        if (!candidates.length && !showMarketOptions && !employer) {
+            send(box('Retainer Candidates and Market Options', 'No candidates found.'), msg.who, msg.playerid);
+            return;
+        }
+
+        candidateHtml = candidates.length ?
+            '<ul style="margin:4px 0 8px 18px;">' + _.map(candidates, function (c) { return renderCandidateEntry(msg, c); }).join('') + '</ul>' :
+            '<div style="color:#ccc;margin:4px 0 8px 0;">No henchman candidates found for this employer.</div>';
+
+        body += '<div style="margin-bottom:8px;">' +
+            removeCandidatesBtn(buildClearCandidatesCommand(employer ? { pc: employer.id } : null), 128) +
+            '</div>' +
+            '<div><b>Generated henchman candidates</b>' + candidateHtml + '</div>';
+
+        if (showMarketOptions) {
+            body += '<hr style="border-color:#555;" /><div><b>Direct hireling and expert offers</b></div>' + buildStandardMarketOptionsHtml(employer);
+        }
+
+        send(box('Retainer Candidates and Market Options', body), msg.who, msg.playerid);
+    }
+
+    function handleAccept(msg, args) {
+        var employer = getEmployerCharacter(msg, args);
+        var candidateId = args.candidate;
+        var candidate;
+        var opts;
+
+        if (!requireControl(msg, employer, 'employer character')) return;
+
+        candidate = state[STATE].candidates[candidateId];
+        if (!candidate) {
+            send('Candidate ' + esc(candidateId) + ' was not found.', msg.who, msg.playerid);
+            return;
+        }
+
+        if (candidate.employerId !== employer.id && !playerIsGM(msg.playerid)) {
+            send('That candidate is not attached to your employer PC.', msg.who, msg.playerid);
+            return;
+        }
+
+        opts = buildOfferOptions(msg, employer, args, {
+            level: candidate.level,
+            className: candidate.className,
+            race: candidate.race
+        }, 'henchman', args.subtype || '', 'market');
+
+        opts.candidateId = candidate.id;
+        opts.delayDays = rollOfferDelayDays('henchman');
+        finalizeRetainerFromOffer(msg, employer, candidate.name, candidate, opts);
+    }
+
+    function handleOffer(msg, args) {
+        var employer = getEmployerCharacter(msg, args);
+        var target = getTargetCharacter(msg, args);
+        var sourceData, opts, npcLevel;
+
+        if (!requireControl(msg, employer, 'employer character')) return;
+
+        if (!target) {
+            send('No target NPC character was found. Use --target|<name or id>.', msg.who, msg.playerid);
+            return;
+        }
+
+        if (target.id === employer.id) {
+            send('Employer and target cannot be the same character.', msg.who, msg.playerid);
+            return;
+        }
+
+        npcLevel = parseIntSafe(args.npclevel, 0) || parseIntSafe(getAttr(target.id, CONFIG.sheetAttrs.level), 0) || 1;
+        sourceData = {
+            level: npcLevel,
+            className: args.classname || getAttr(target.id, CONFIG.sheetAttrs.charClass) || '',
+            race: args.race || getAttr(target.id, CONFIG.sheetAttrs.race) || ''
+        };
+
+        opts = buildOfferOptions(msg, employer, args, sourceData, 'henchman', 'normal', 'direct_offer');
+        if (!opts.delayDays) opts.delayDays = rollOfferDelayDays('henchman');
+        finalizeRetainerFromOffer(msg, employer, target.get('name'), sourceData, opts);
+    }
+
+
+    function handleAddTokenNpc(msg, args) {
+        var employer = getEmployerCharacter(msg, args);
+        var target = getTargetCharacter(msg, args);
+        var employerPlayerId, sharePct, shareCategory, wages, loyaltyBase, className, race, level, retainer;
+
+        if (!requireControl(msg, employer, 'employer character')) return;
+        if (!target) {
+            send('No existing NPC character was found. Use the Add Token NPC dropdown.', msg.who, msg.playerid);
+            return;
+        }
+        if (target.id === employer.id) {
+            send('Employer and target cannot be the same character.', msg.who, msg.playerid);
+            return;
+        }
+        if (getAttr(target.id, ATTR.RETAINER_TYPE) !== '') {
+            send('That character is already a retainer or NPC in the roster.', msg.who, msg.playerid);
+            return;
+        }
+
+        employerPlayerId = getEmployerPlayerId(employer, msg.playerid);
+        sharePct = Math.max(0, parseNumber(args.share, 0));
+        shareCategory = getShareCategory(args, sharePct);
+        wages = resolveWage(args.subtype || '', args);
+        loyaltyBase = 50 + getPCLoyaltyAdj(employer, args);
+        className = args.classname || getAttr(target.id, ATTR.NPC_CLASS) || getAttr(target.id, CONFIG.sheetAttrs.charClass) || '';
+        race = args.race || getAttr(target.id, ATTR.NPC_RACE) || getAttr(target.id, CONFIG.sheetAttrs.race) || '';
+        level = parseIntSafe(args.npclevel, 0) || parseIntSafe(getAttr(target.id, ATTR.NPC_LEVEL), 0) || parseIntSafe(getAttr(target.id, CONFIG.sheetAttrs.level), 0) || 1;
+
+        retainer = adoptExistingCharacterAsRetainer(target, {
+            name: target.get('name'),
+            employer: employer,
+            playerid: employerPlayerId,
+            controlledby: employerPlayerId,
+            retainerType: 'npc',
+            subType: args.subtype || '',
+            hireMethod: 'existing_token_npc',
+            status: args.status || 'active',
+            xpMode: args.xpmode || defaultXpModeForType('npc'),
+            dailyWageSp: wages.dailySp,
+            monthlyWageGp: wages.monthlyGp,
+            wageSource: wages.source,
+            initialPayment: parseMoney(args.initial, 0),
+            sharePct: sharePct,
+            shareCategory: shareCategory,
+            magicDivision: args.magicdivision || '',
+            quartersSupport: parseBool(args.quarters, true),
+            equipment: args.equipment || '',
+            magicItems: parseIntSafe(args.magicitems, 0) || 0,
+            assignment: args.assignment || '',
+            loyaltyBase: loyaltyBase,
+            loyaltyCurrent: parseIntSafe(args.loyalty, loyaltyBase) || loyaltyBase,
+            loyaltyNotes: args.loyaltynotes || '',
+            dmMod: parseIntSafe(args.dmmod, 0) || 0,
+            dmReason: args.dmreason || '',
+            offerNotes: args.notes || '',
+            npcLevel: level,
+            className: className,
+            race: race,
+            contractDays: parseIntSafe(args.days, 0) || 0,
+            payPeriod: args.payperiod || '',
+            hireBonusPct: parseIntSafe(args.bonuspct, 0) || 0,
+            contractPayGp: parseMoney(args.contractpaygp, 0)
+        });
+
+        send(box('Existing Token NPC Added',
+            line('Character', esc(retainer.get('name'))) +
+            line('Employer', esc(employer.get('name'))) +
+            line('Type', 'npc') +
+            line('Class', esc(className)) +
+            line('Race', esc(race)) +
+            line('Level', level) +
+            line('Controller', esc(getDisplayName(employerPlayerId))) +
+            line('Note', 'This uses the existing character sheet and gives control to the employer player.')
+        ), msg.who, msg.playerid);
+    }
+
+    function handlePrepareStandard(msg, args) {
+        var employer = getEmployerCharacter(msg, args);
+        var wages, days, reactionPct, name, type, subtype;
+        var sharePct, shareCategory;
+        var loyaltyBase;
+        var employerPlayerId;
+        var successCap;
+        var command;
+
+        if (!requireControl(msg, employer, 'employer character')) return;
+
+        name = args.name || makeName();
+
+        type = args.type || 'hireling';
+        subtype = args.subtype || '';
+        days = Math.max(1, parseIntSafe(args.days, 7) || 7);
+
+        wages = resolveWage(subtype, args);
+        reactionPct = getReactionBonusPct(employer);
+        sharePct = Math.max(0, parseNumber(args.share, 0));
+        shareCategory = getShareCategory(args, sharePct);
+        loyaltyBase = 50 + getPCLoyaltyAdj(employer, args);
+        employerPlayerId = getEmployerPlayerId(employer, msg.playerid);
+        successCap = standardEmploymentSuccessCap(type);
+
+        if (!isStandardEmploymentType(type)) {
+            handleAdd(msg, args);
+            return;
+        }
+
+        command = buildRetainerButtonCommand({
+            pc: employer.id,
+            name: name,
+            type: type,
+            subtype: subtype,
+            monthlygp: wages.monthlyGp,
+            dailysp: wages.dailySp,
+            days: days,
+            bonuspct: days > 7 ? buildHireBonusQuery(employer, type) : 0,
+            status: 'active',
+            xpmode: defaultXpModeForType(type),
+            share: sharePct,
+            sharecat: shareCategory.key,
+            race: args.race || '',
+            npclevel: parseIntSafe(args.npclevel, 1) || 1,
+            delaydays: rollOfferDelayDays(type),
+            dmreason: randomDelayReason()
+        });
+
+        send(box(
+            'Standard Employment Offer',
+            line('Employer', esc(employer.get('name'))) +
+            line('Retainer', esc(name)) +
+            (args.race !== undefined && args.race !== '' ? line('Race', esc(args.race)) : '') +
+            (args.npclevel !== undefined && args.npclevel !== '' ? line('Level', parseIntSafe(args.npclevel, 1) || 1) : '') +
+            line('Type', esc(type) + (subtype ? ' (' + esc(subtype) + ')' : '')) +
+            line('Days of service', days) +
+            line('Reaction modifier', (reactionPct >= 0 ? '+' : '') + reactionPct + '%') +
+            line('Maximum success chance', successCap + '%') +
+            line('Offer reply delay', (normalizeText(type) === 'henchman' ? '2-8 days' : '0-4 days') + ', rolled when Make Offer is clicked') +
+            line('Pro-rated pay due later', formatCpAsCoins(contractBaseCp(type, wages, days))) +
+            line('Rule used', days > 7 ? 'Only the bonus is paid up front. Contracts over 7 days require an upfront bonus.' : 'No upfront bonus is required for 7 days or fewer.') +
+            '<div style="margin-top:8px;">' +
+            menuBtn('Make Offer', command, CONFIG.sectionColors.add.bg, CONFIG.sectionColors.add.border, 120) +
+            '</div>'
+        ), msg.who, msg.playerid);
+    }
+
+    function handleStandardEmploymentAdd(msg, employer, args, wages, sharePct, shareCategory, loyaltyBase, employerPlayerId) {
+        var name = args.name || makeName();
+        var retainerType = args.type || 'hireling';
+        var subType = args.subtype || '';
+        var days = Math.max(1, parseIntSafe(args.days, 7) || 7);
+        var bonusPct = clamp(parseIntSafe(args.bonuspct, 0) || 0, 0, 100);
+        var baseCp = contractBaseCp(retainerType, wages, days);
+        var bonusCp = standardUpfrontBonusCp(wages, bonusPct, days);
+        var reactionPct = getReactionBonusPct(employer);
+        var successCap = standardEmploymentSuccessCap(retainerType);
+        var baseChancePct = days > 7 ? basePercentFromBonusPct(bonusPct) : successCap;
+        var finalChancePct = days > 7 ? clamp(baseChancePct + reactionPct, 0, successCap) : successCap;
+        var roll = randomInt(1, 100);
+        var accepted = roll <= finalChancePct;
+        var payPeriod = 'daily prorated';
+        var paymentResult;
+        var retainer;
+        var body;
+        var assignmentText = (args.assignment ? args.assignment + ' | ' : '') + 'Contract: ' + days + ' day(s)';
+        var bonusText = days <= 7 ? 'No bonus for 7 days or fewer.' : (bonusPct + '% of monthly rate');
+        var delayDays = Math.max(0, parseIntSafe(args.delaydays, 0) || 0);
+        var pending;
+
+        if (delayDays > 0) {
+            pending = createPendingOffer(employer, name, {
+                level: parseIntSafe(args.npclevel, 1) || 1,
+                className: '',
+                race: args.race || ''
+            }, {
+                pendingMode: 'standard',
+                standardArgs: _.extend({}, args, { delaydays: 0 }),
+                standardWages: { dailySp: wages.dailySp, monthlyGp: wages.monthlyGp, source: wages.source, label: wages.label || subType },
+                standardSharePct: sharePct,
+                standardShareCategoryKey: shareCategory.key,
+                standardLoyaltyBase: loyaltyBase,
+                playerid: employerPlayerId
+            }, delayDays, randomDelayReason(), employerPlayerId);
+
+            body = '' +
+                line('Employer', esc(employer.get('name'))) +
+                line('Retainer', esc(name)) +
+                line('Type', esc(retainerType) + (subType ? ' (' + esc(subType) + ')' : '')) +
+                line('Reply delay', delayDays + ' day(s)') +
+                line('Pending ID', esc(pending.id)) +
+                line('Pro-rated pay due later', formatCpAsCoins(baseCp)) +
+                line('Upfront bonus', bonusText + (bonusCp > 0 ? ' = ' + formatCpAsCoins(bonusCp) : ' = none'));
+            send(box('Standard Hireling Offer Delayed', body), msg.who, msg.playerid);
+            return;
+        }
+
+        if (!accepted) {
+            body = '' +
+                line('Employer', esc(employer.get('name'))) +
+                line('Retainer', esc(name)) +
+                line('Type', esc(retainerType) + (subType ? ' (' + esc(subType) + ')' : '')) +
+                line('Days', days) +
+                line('Pay basis', esc(payPeriod)) +
+                line('Pro-rated pay due later', formatCpAsCoins(baseCp)) +
+                line('Upfront bonus', bonusText + (bonusCp > 0 ? ' = ' + formatCpAsCoins(bonusCp) : ' = none')) +
+                line('Base chance', baseChancePct + '%') +
+                line('Reaction modifier', (reactionPct >= 0 ? '+' : '') + reactionPct + '%') +
+                line('Final chance', finalChancePct + '%') +
+                line('Success / failure note', 'Failure on 1d100 roll above ' + finalChancePct) +
+                line('Die roll', roll) +
+                line('Result', '<span style="color:#ff6666;font-weight:bold;">Declined</span>');
+            if (args.pendingid && state[STATE].pendingOffers[args.pendingid]) delete state[STATE].pendingOffers[args.pendingid];
+            send(box('Standard Hireling Employment', body), msg.who, msg.playerid);
+            return;
+        }
+
+        paymentResult = deductCoins(employer, bonusCp);
+        if (!paymentResult.ok) {
+            body = '' +
+                line('Employer', esc(employer.get('name'))) +
+                line('Retainer', esc(name)) +
+                line('Required upfront bonus', formatCpAsCoins(bonusCp)) +
+                line('Current coins', formatCoinBundle(paymentResult.before)) +
+                '<div style="color:#ff6666;font-weight:bold;margin-top:6px;">Not enough coin on the employer sheet.</div>';
+            send(box('Standard Hireling Employment Failed', body), msg.who, msg.playerid);
+            return;
+        }
+
+        retainer = buildRetainerSheet({
+            name: name,
+            employer: employer,
+            playerid: employerPlayerId,
+            controlledby: employerPlayerId,
+            retainerType: retainerType,
+            subType: subType,
+            hireMethod: 'standard_employment',
+            status: 'active',
+            xpMode: defaultXpModeForType(retainerType),
+            dailyWageSp: wages.dailySp,
+            monthlyWageGp: wages.monthlyGp,
+            wageSource: wages.source,
+            initialPayment: formatNumber2(cpToGp(bonusCp)),
+            sharePct: sharePct,
+            shareCategory: shareCategory,
+            magicDivision: args.magicdivision || '',
+            quartersSupport: parseBool(args.quarters, true),
+            equipment: args.equipment || '',
+            magicItems: parseIntSafe(args.magicitems, 0) || 0,
+            assignment: assignmentText,
+            loyaltyBase: loyaltyBase,
+            loyaltyCurrent: parseIntSafe(args.loyalty, loyaltyBase) || loyaltyBase,
+            loyaltyNotes: args.loyaltynotes || '',
+            dmMod: parseIntSafe(args.dmmod, 0) || 0,
+            dmReason: args.dmreason || '',
+            offerNotes: args.notes || '',
+            npcLevel: parseIntSafe(args.npclevel, 1) || 1,
+            className: args.classname || '',
+            race: args.race || '',
+            contractDays: days,
+            payPeriod: payPeriod,
+            hireBonusPct: bonusPct,
+            contractPayGp: formatNumber2(cpToGp(baseCp))
+        });
+
+        body = '' +
+            line('Employer', esc(employer.get('name'))) +
+            line('Retainer', esc(retainer.get('name'))) +
+            line('Type', esc(retainerType) + (subType ? ' (' + esc(subType) + ')' : '')) +
+            line('Days', days) +
+            line('Pay basis', esc(payPeriod)) +
+            line('Pro-rated pay due later', formatCpAsCoins(baseCp)) +
+            line('Upfront bonus', bonusText + (bonusCp > 0 ? ' = ' + formatCpAsCoins(bonusCp) : ' = none')) +
+            line('Base chance', baseChancePct + '%') +
+            line('Reaction modifier', (reactionPct >= 0 ? '+' : '') + reactionPct + '%') +
+            line('Final chance', finalChancePct + '%') +
+            line('Success / failure note', 'Success on ' + finalChancePct + ' or less on 1d100') +
+            line('Die roll', roll) +
+            line('Coins before', formatCoinBundle(paymentResult.before)) +
+            line('Coins after', formatCoinBundle(paymentResult.after)) +
+            line('Result', '<span style="color:#66ff66;font-weight:bold;">Accepted</span>');
+
+        if (args.pendingid && state[STATE].pendingOffers[args.pendingid]) delete state[STATE].pendingOffers[args.pendingid];
+        send(box('Standard Hireling Employment', body), msg.who, msg.playerid);
+    }
+
+    function handleAdd(msg, args) {
+        var employer = getEmployerCharacter(msg, args);
+        var name, sharePct, shareCategory, wages, loyaltyBase, employerPlayerId, retainer, sourceData, opts;
+
+        if (!requireControl(msg, employer, 'employer character')) return;
+
+        name = args.name || makeName();
+
+        sharePct = Math.max(0, parseNumber(args.share, 0));
+        shareCategory = getShareCategory(args, sharePct);
+        wages = resolveWage(args.subtype || '', args);
+        loyaltyBase = 50 + getPCLoyaltyAdj(employer, args);
+        employerPlayerId = getEmployerPlayerId(employer, msg.playerid);
+
+        if (isStandardEmploymentType(args.type || 'hireling')) {
+            handleStandardEmploymentAdd(msg, employer, args, wages, sharePct, shareCategory, loyaltyBase, employerPlayerId);
+            return;
+        }
+
+        if (normalizeText(args.type || '') === 'henchman' && parseBool(args.directoffer, false)) {
+            sourceData = {
+                level: parseIntSafe(args.npclevel, 1) || 1,
+                className: args.classname || args.subtype || '',
+                race: args.race || ''
+            };
+            opts = buildOfferOptions(msg, employer, args, sourceData, 'henchman', args.subtype || '', 'direct_manual');
+            opts.delayDays = rollOfferDelayDays('henchman');
+            if (!opts.dmReason) opts.dmReason = randomDelayReason();
+            finalizeRetainerFromOffer(msg, employer, name, sourceData, opts);
+            return;
+        }
+
+        retainer = buildRetainerSheet({
+            name: name,
+            employer: employer,
+            playerid: employerPlayerId,
+            controlledby: employerPlayerId,
+            retainerType: args.type || 'hireling',
+            subType: args.subtype || '',
+            hireMethod: args.method || 'contract',
+            status: args.status || 'active',
+            xpMode: args.xpmode || defaultXpModeForType(args.type || 'hireling'),
+            dailyWageSp: wages.dailySp,
+            monthlyWageGp: wages.monthlyGp,
+            wageSource: wages.source,
+            initialPayment: parseMoney(args.initial, 0),
+            sharePct: sharePct,
+            shareCategory: shareCategory,
+            magicDivision: args.magicdivision || '',
+            quartersSupport: parseBool(args.quarters, true),
+            equipment: args.equipment || '',
+            magicItems: parseIntSafe(args.magicitems, 0) || 0,
+            assignment: args.assignment || '',
+            loyaltyBase: loyaltyBase,
+            loyaltyCurrent: parseIntSafe(args.loyalty, loyaltyBase) || loyaltyBase,
+            loyaltyNotes: args.loyaltynotes || '',
+            dmMod: parseIntSafe(args.dmmod, 0) || 0,
+            dmReason: args.dmreason || '',
+            offerNotes: args.notes || '',
+            npcLevel: parseIntSafe(args.npclevel, 1) || 1,
+            className: args.classname || '',
+            race: args.race || '',
+            contractDays: parseIntSafe(args.days, 0) || 0,
+            payPeriod: args.payperiod || '',
+            hireBonusPct: parseIntSafe(args.bonuspct, 0) || 0,
+            contractPayGp: parseMoney(args.contractpaygp, 0)
+        });
+
+        send(box('Retainer Added',
+            line('Created', esc(retainer.get('name'))) +
+            line('Employer', esc(employer.get('name'))) +
+            line('Type', esc(getAttr(retainer.id, ATTR.RETAINER_TYPE))) +
+            line('Subtype', esc(getAttr(retainer.id, ATTR.RETAINER_SUBTYPE))) +
+            line('Wage', esc(formatWage(getAttr(retainer.id, ATTR.DAILY_WAGE_SP), getAttr(retainer.id, ATTR.MONTHLY_WAGE_GP)))) +
+            line('Share', esc(getAttr(retainer.id, ATTR.TREASURE_SHARE_PCT)) + '%') +
+            line('Loyalty', esc(getAttr(retainer.id, ATTR.LOYALTY_CURRENT))) +
+            line('Controller', esc(getDisplayName(employerPlayerId))) +
+            line('XP mode', esc(getAttr(retainer.id, ATTR.RETAINER_XP_MODE)))
+        ), msg.who, msg.playerid);
+    }
+
+    function handlePending(msg, args) {
+        var pending = getVisiblePendingOffers(msg);
+        var employer;
+
+        if (args.pc || args.employer) {
+            employer = getCharacterByRef(args.pc || args.employer);
+            if (!employer) {
+                send('Employer not found.', msg.who, msg.playerid);
+                return;
+            }
+            pending = _.filter(pending, function (p) { return p.employerId === employer.id; });
+        }
+
+        if (!pending.length) {
+            send(box('Pending Retainer Offers', 'No pending offers found.'), msg.who, msg.playerid);
+            return;
+        }
+
+        send(box('Pending Retainer Offers', '<div style="margin-bottom:6px;color:#ccc;">Offers with a reply delay appear here. Hirelings/experts: 0-4 days. Henchmen: 2-8 days.</div><ul style="margin:4px 0 0 18px;">' + _.map(pending, renderPendingEntry).join('') + '</ul>'), msg.who, msg.playerid);
+    }
+
+    function handleResolve(msg, args) {
+        var pendingId = args.offer || args.pending || args.id;
+        var pending = state[STATE].pendingOffers[pendingId];
+        var employer;
+        var pendingArgs;
+        var pendingWages;
+
+        if (!pending) {
+            send('Pending offer ' + esc(pendingId) + ' was not found.', msg.who, msg.playerid);
+            return;
+        }
+
+        employer = getCharacterByRef(pending.employerId);
+        if (!requireControl(msg, employer, 'employer character')) return;
+
+        if (args.dmmod !== undefined) pending.opts.dmMod = parseIntSafe(args.dmmod, 0) || 0;
+        if (args.dmreason !== undefined) pending.opts.dmReason = args.dmreason || '';
+
+        if (normalizeText(pending.opts.pendingMode || '') === 'standard') {
+            pendingArgs = _.extend({}, pending.opts.standardArgs || {});
+            pendingArgs.pendingid = pending.id;
+            pendingArgs.delaydays = 0;
+            pendingWages = pending.opts.standardWages || resolveWage(pendingArgs.subtype || '', pendingArgs);
+
+            handleStandardEmploymentAdd(
+                msg,
+                employer,
+                pendingArgs,
+                pendingWages,
+                parseNumber(pending.opts.standardSharePct, 0),
+                getShareCategory({ sharecat: pending.opts.standardShareCategoryKey }, parseNumber(pending.opts.standardSharePct, 0)),
+                parseIntSafe(pending.opts.standardLoyaltyBase, 50) || 50,
+                pending.opts.playerid || getEmployerPlayerId(employer, msg.playerid)
+            );
+            return;
+        }
+
+        if (normalizeText(pending.opts.pendingMode || '') === 'extend') {
+            handleExtendContract(msg, { id: pending.opts.retainerId, days: pending.opts.days, bonuspct: pending.opts.bonuspct, pendingid: pending.id });
+            return;
+        }
+
+        pending.opts.pendingId = pending.id;
+        pending.opts.delayDays = 0;
+        pending.opts.override = '';
+        finalizeRetainerFromOffer(msg, employer, pending.sourceName, pending.sourceData, pending.opts);
+    }
+
+    function handleModify(msg, args) {
+        var retainer = getRetainerByRef(msg, args);
+        var newEmployer, newEmployerPlayerId, sharePct, shareCategory, subtype, wages, cur;
+
+        if (!requireRetainerManage(msg, retainer)) return;
+
+        if (args.pc || args.employer) {
+            newEmployer = getCharacterByRef(args.pc || args.employer);
+            if (!requireControl(msg, newEmployer, 'new employer character')) return;
+            newEmployerPlayerId = getEmployerPlayerId(newEmployer, msg.playerid);
+            retainer.set({ controlledby: newEmployerPlayerId, inplayerjournals: 'all' });
+            setAttr(retainer.id, ATTR.EMPLOYER_ID, newEmployer.id);
+            setAttr(retainer.id, ATTR.EMPLOYER_NAME, newEmployer.get('name'));
+            setAttr(retainer.id, ATTR.EMPLOYER_PLAYER_ID, newEmployerPlayerId);
+        }
+
+        if (args.type !== undefined) setAttr(retainer.id, ATTR.RETAINER_TYPE, args.type);
+        if (args.subtype !== undefined) setAttr(retainer.id, ATTR.RETAINER_SUBTYPE, args.subtype);
+        if (args.xpmode !== undefined) setAttr(retainer.id, ATTR.RETAINER_XP_MODE, args.xpmode);
+        else if (args.type !== undefined) setAttr(retainer.id, ATTR.RETAINER_XP_MODE, defaultXpModeForType(args.type));
+        if (args.status !== undefined) setAttr(retainer.id, ATTR.STATUS, args.status);
+        if (args.assignment !== undefined) setAttr(retainer.id, ATTR.ASSIGNMENT, args.assignment);
+        if (args.initial !== undefined) setAttr(retainer.id, ATTR.INITIAL_PAYMENT, parseMoney(args.initial, 0));
+        if (args.notes !== undefined) setAttr(retainer.id, ATTR.OFFER_NOTES, args.notes);
+        if (args.loyaltynotes !== undefined) setAttr(retainer.id, ATTR.LOYALTY_NOTES, args.loyaltynotes);
+        if (args.loyalty !== undefined) setAttr(retainer.id, ATTR.LOYALTY_CURRENT, parseIntSafe(args.loyalty, getNumAttr(retainer.id, ATTR.LOYALTY_CURRENT, 50)));
+        if (args.contractdays !== undefined) setAttr(retainer.id, ATTR.CONTRACT_DAYS, parseIntSafe(args.contractdays, getNumAttr(retainer.id, ATTR.CONTRACT_DAYS, 0)));
+        if (args.payperiod !== undefined) setAttr(retainer.id, ATTR.PAY_PERIOD, args.payperiod);
+        if (args.bonuspct !== undefined) setAttr(retainer.id, ATTR.HIRE_BONUS_PCT, parseIntSafe(args.bonuspct, getNumAttr(retainer.id, ATTR.HIRE_BONUS_PCT, 0)));
+        if (args.contractpaygp !== undefined) setAttr(retainer.id, ATTR.CONTRACT_PAY_GP, parseMoney(args.contractpaygp, getNumAttr(retainer.id, ATTR.CONTRACT_PAY_GP, 0)));
+
+        if (args.loyaltymod !== undefined) {
+            cur = getNumAttr(retainer.id, ATTR.LOYALTY_CURRENT, 50);
+            setAttr(retainer.id, ATTR.LOYALTY_CURRENT, cur + (parseIntSafe(args.loyaltymod, 0) || 0));
+        }
+
+        if (args.loyaltybase !== undefined) {
+            setAttr(retainer.id, ATTR.LOYALTY_BASE, parseIntSafe(args.loyaltybase, getNumAttr(retainer.id, ATTR.LOYALTY_BASE, 50)));
+        }
+
+        if (args.share !== undefined || args.sharecat !== undefined || args.sharecategory !== undefined) {
+            sharePct = args.share !== undefined ? Math.max(0, parseNumber(args.share, 0)) : getNumAttr(retainer.id, ATTR.TREASURE_SHARE_PCT, 0);
+            shareCategory = getShareCategory(args, sharePct);
+            setAttr(retainer.id, ATTR.TREASURE_SHARE_PCT, sharePct);
+            setAttr(retainer.id, ATTR.SHARE_CATEGORY, shareCategory.key);
+        }
+
+        if (args.dailysp !== undefined || args.monthlygp !== undefined || args.wage !== undefined || args.subtype !== undefined || args.wagesource !== undefined || args.wagepct !== undefined) {
+            subtype = args.subtype !== undefined ? args.subtype : getAttr(retainer.id, ATTR.RETAINER_SUBTYPE);
+
+            if (args.dailysp !== undefined || args.monthlygp !== undefined || args.wage !== undefined || args.subtype !== undefined || args.wagesource !== undefined) {
+                wages = resolveWage(subtype, {
+                    subtype: subtype,
+                    dailysp: args.dailysp,
+                    monthlygp: args.monthlygp,
+                    wage: args.wage,
+                    wagesource: args.wagesource
+                });
+            } else {
+                wages = {
+                    dailySp: getNumAttr(retainer.id, ATTR.DAILY_WAGE_SP, 0),
+                    monthlyGp: getNumAttr(retainer.id, ATTR.MONTHLY_WAGE_GP, 0),
+                    source: getAttr(retainer.id, ATTR.WAGE_SOURCE) || 'custom',
+                    label: subtype
+                };
+            }
+
+            if (args.wagepct !== undefined) wages = applyWageAdjustmentPct(wages, args.wagepct);
+
+            setAttr(retainer.id, ATTR.DAILY_WAGE_SP, wages.dailySp);
+            setAttr(retainer.id, ATTR.MONTHLY_WAGE_GP, wages.monthlyGp);
+            setAttr(retainer.id, ATTR.WAGE_SOURCE, wages.source);
+        }
+
+        send(box('Retainer Modified',
+            line('Retainer', esc(retainer.get('name'))) +
+            line('Employer', esc(getAttr(retainer.id, ATTR.EMPLOYER_NAME))) +
+            line('Status', esc(getAttr(retainer.id, ATTR.STATUS))) +
+            line('Wage', esc(formatWage(getAttr(retainer.id, ATTR.DAILY_WAGE_SP), getAttr(retainer.id, ATTR.MONTHLY_WAGE_GP)))) +
+            line('Contract pay due', esc(getAttr(retainer.id, ATTR.CONTRACT_PAY_GP) || '0') + ' gp') +
+            line('Share %', esc(getAttr(retainer.id, ATTR.TREASURE_SHARE_PCT)) + '%') +
+            line('Loyalty', esc(getAttr(retainer.id, ATTR.LOYALTY_CURRENT)) + ' / ' + esc(getAttr(retainer.id, ATTR.LOYALTY_BASE))) +
+            line('XP mode', esc(getAttr(retainer.id, ATTR.RETAINER_XP_MODE)))
+        ), msg.who, msg.playerid);
+    }
+
+    function handleRemove(msg, args) {
+        var retainer = getRetainerByRef(msg, args);
+        var name, confirmCmd, cancelCmd;
+
+        if (!requireRetainerManage(msg, retainer)) return;
+
+        name = retainer.get('name') || 'Unnamed Retainer';
+
+        if (normalizeText(args.confirm || '') !== 'yes') {
+            confirmCmd = '!retainer-remove --id|' + retainer.id + ' --confirm|yes';
+            cancelCmd = '!retainer-menu';
+
+            send(box(
+                'Confirm Retainer Removal',
+                line('Retainer', esc(name)) +
+                '<div style="margin-top:6px;color:#ff6666;font-weight:bold;">This will delete the retainer character/journal from Roll20.</div>' +
+                '<div style="margin-top:8px;">' +
+                    menuBtn('Confirm Delete', confirmCmd, CONFIG.sectionColors.recruit.bg, CONFIG.sectionColors.recruit.border, 110) + ' ' +
+                    menuBtn('Cancel', cancelCmd, CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 80) +
+                '</div>'
+            ), msg.who, msg.playerid);
+            return;
+        }
+
+        retainer.remove();
+        send(box('Retainer Removed', line('Removed', esc(name))), msg.who, msg.playerid);
+    }
+
+    function handleClearCandidates(msg, args) {
+        var employer = args.pc || args.employer ? getCharacterByRef(args.pc || args.employer) : null;
+        var candidates = _.values(state[STATE].candidates || {});
+        var pending = _.values(state[STATE].pendingOffers || {});
+        var count = 0;
+        var pendingCount = 0;
+        var removeIds;
+        var removePendingIds;
+        var optionEmployerIds;
+
+        if (employer) {
+            if (!requireControl(msg, employer, 'employer character')) return;
+            candidates = _.filter(candidates, function (c) { return c.employerId === employer.id; });
+            pending = _.filter(pending, function (p) { return p.employerId === employer.id; });
+        } else if (!playerIsGM(msg.playerid)) {
+            candidates = _.filter(candidates, function (c) { return c.employerPlayerId === msg.playerid; });
+            pending = _.filter(pending, function (p) { return p.employerPlayerId === msg.playerid; });
+        }
+
+        optionEmployerIds = getScopeMarketOptionEmployerIds(msg, employer);
+
+        if (!candidates.length && !optionEmployerIds.length && !pending.length) {
+            send(box('Remove Candidates', 'No candidates or pending offers found to clear.'), msg.who, msg.playerid);
+            return;
+        }
+
+        if (!parseBool(args.confirm, false)) {
+            send(box(
+                'Confirm Remove Candidates',
+                line('Scope', employer ? esc(employer.get('name')) : (playerIsGM(msg.playerid) ? 'All candidates' : 'Your candidates')) +
+                line('Generated candidates to remove', candidates.length) +
+                line('Pending offers to remove', pending.length) +
+                line('Direct hire/expert options to remove', optionEmployerIds.length) +
+                '<div style="margin-top:6px;color:#ff6666;font-weight:bold;">This will permanently remove the listed candidates, pending offers, and direct market options for this scope.</div>' +
+                '<div style="margin-top:8px;">' +
+                    menuBtn('Confirm Remove', buildClearCandidatesCommand({ pc: employer ? employer.id : '' }) + ' --confirm|yes', CONFIG.sectionColors.recruit.bg, CONFIG.sectionColors.recruit.border, 116) + ' ' +
+                    menuBtn('Cancel', '!retainer-candidates' + (employer ? ' --pc|' + employer.id : ''), CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 76) +
+                '</div>'
+            ), msg.who, msg.playerid);
+            return;
+        }
+
+        removeIds = _.pluck(candidates, 'id');
+        _.each(removeIds, function (id) {
+            if (state[STATE].candidates[id]) {
+                delete state[STATE].candidates[id];
+                count += 1;
+            }
+        });
+
+        removePendingIds = _.pluck(pending, 'id');
+        _.each(removePendingIds, function (id) {
+            if (state[STATE].pendingOffers[id]) {
+                delete state[STATE].pendingOffers[id];
+                pendingCount += 1;
+            }
+        });
+
+        _.each(optionEmployerIds, function (employerId) {
+            setEmployerMarketOptions(employerId, false);
+        });
+
+        send(box('Candidates Removed',
+            line('Generated candidates removed', count) +
+            line('Pending offers removed', pendingCount) +
+            line('Direct hire/expert option groups removed', optionEmployerIds.length) +
+            line('Scope', employer ? esc(employer.get('name')) : (playerIsGM(msg.playerid) ? 'All candidates' : 'Your candidates'))
+        ), msg.who, msg.playerid);
+    }
+
+    function handleDeleteCandidate(msg, args) {
+        var candidateId = args.candidate || args.id;
+        var candidate = state[STATE].candidates[candidateId];
+        var confirmCmd, cancelCmd;
+
+        if (!candidate) {
+            send('Candidate ' + esc(candidateId) + ' was not found.', msg.who, msg.playerid);
+            return;
+        }
+
+        if (!candidateDeleteAllowed(msg, candidate)) {
+            send('You do not manage candidate ' + esc(candidateId) + '.', msg.who, msg.playerid);
+            return;
+        }
+
+        if (normalizeText(args.confirm || '') !== 'yes') {
+            confirmCmd = '!retainer-delete-candidate --candidate|' + candidate.id + ' --confirm|yes';
+            cancelCmd = '!retainer-menu';
+
+            send(box(
+                'Confirm Candidate Deletion',
+                line('Candidate', esc(candidate.name)) +
+                line('ID', esc(candidate.id)) +
+                '<div style="margin-top:6px;color:#ff6666;font-weight:bold;">This removes the candidate from the recruitment pool.</div>' +
+                '<div style="margin-top:8px;">' +
+                    menuBtn('Confirm Delete', confirmCmd, CONFIG.sectionColors.recruit.bg, CONFIG.sectionColors.recruit.border, 110) + ' ' +
+                    menuBtn('Cancel', cancelCmd, CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 80) +
+                '</div>'
+            ), msg.who, msg.playerid);
+            return;
+        }
+
+        delete state[STATE].candidates[candidate.id];
+        send(box('Candidate Deleted', line('Removed', esc(candidate.name) + ' [' + esc(candidate.id) + ']')), msg.who, msg.playerid);
+    }
+
+    function handleReset(msg, args) {
+        var entries, count;
+
+        if (!playerIsGM(msg.playerid)) {
+            send('Only the GM can reset retainer campaign data.', msg.who, msg.playerid);
+            return;
+        }
+
+        if (normalizeText(args.confirm || '') !== 'yes') {
+            send(box(
+                'Confirm Campaign Reset',
+                '<div style="color:#ff6666;font-weight:bold;">This will delete all retainers and clear all candidates and pending offers.</div>' +
+                '<div style="margin-top:8px;">' +
+                    menuBtn('Confirm Reset', '!retainer-reset --confirm|yes', CONFIG.sectionColors.recruit.bg, CONFIG.sectionColors.recruit.border, 110) + ' ' +
+                    menuBtn('Cancel', '!retainer-menu', CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 80) +
+                '</div>'
+            ), msg.who, msg.playerid);
+            return;
+        }
+
+        entries = getRetainerRosterEntries();
+        count = entries.length;
+
+        _.each(entries, function (e) {
+            e.character.remove();
+        });
+
+        state[STATE].candidates = {};
+        state[STATE].pendingOffers = {};
+        state[STATE].nextCandidateId = 1;
+        state[STATE].nextPendingId = 1;
+        state[STATE].marketOptionsByEmployer = {};
+
+        send(box(
+            'Campaign Reset Complete',
+            line('Retainers deleted', count) +
+            line('Candidates cleared', 'yes') +
+            line('Pending offers cleared', 'yes')
+        ), msg.who, msg.playerid);
+    }
+
+    function handleManageMenu(msg, args) {
+        var retainer = getRetainerByRef(msg, args);
+        var curLoyalty;
+        var band;
+        var employer;
+
+        if (!requireRetainerManage(msg, retainer)) return;
+
+        curLoyalty = getAttr(retainer.id, ATTR.LOYALTY_CURRENT) || '0';
+        band = loyaltyBand(curLoyalty);
+        employer = getCharacterByRef(getAttr(retainer.id, ATTR.EMPLOYER_ID));
+
+        send(box(
+            'Manage Retainer: ' + (retainer.get('name') || 'Retainer'),
+            line('Employer', esc(getAttr(retainer.id, ATTR.EMPLOYER_NAME))) +
+            line('Status', esc(getAttr(retainer.id, ATTR.STATUS))) +
+            line('Wage', esc(formatWage(getAttr(retainer.id, ATTR.DAILY_WAGE_SP), getAttr(retainer.id, ATTR.MONTHLY_WAGE_GP)))) +
+            line('Contract pay due', esc(getAttr(retainer.id, ATTR.CONTRACT_PAY_GP) || '0') + ' gp') +
+            line('Share %', esc(getAttr(retainer.id, ATTR.TREASURE_SHARE_PCT)) + '%') +
+            line('Loyalty', esc(curLoyalty) + ' / ' + esc(getAttr(retainer.id, ATTR.LOYALTY_BASE)) + ' — ' + esc(band.label)) +
+            '<div style="font-size:11px;color:#ccc;margin-top:6px;">Use a negative sign for wage or loyalty decreases.</div>' +
+            '<div style="margin-top:8px;">' +
+                menuBtn('Status', '!retainer-modify --id|' + retainer.id + ' --status|?{Status|Active,active|Dismissed,dismissed|Dead,dead|Missing,missing}', CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 78) +
+                menuBtn('Pay', '!retainer-pay-menu --id|' + retainer.id, CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 78) +
+                menuBtn('Share %', '!retainer-modify --id|' + retainer.id + ' --share|?{Share %|5}', CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 78) +
+                menuBtn('Wage +/-', '!retainer-modify --id|' + retainer.id + ' --wagepct|?{Wage adjustment % (use - for decrease)|0}', CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 78) +
+                menuBtn('Extend Contract', buildExtensionCommand(retainer, employer), CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 106) +
+                menuBtn('Loyalty +/-', '!retainer-modify --id|' + retainer.id + ' --loyaltymod|?{Loyalty adjustment (use - to decrease)|0}', CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 86) +
+                menuBtn('Set Loyalty', '!retainer-modify --id|' + retainer.id + ' --loyalty|?{Loyalty score|' + curLoyalty + '}', CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 86) +
+                menuBtn('Loyalty Table', '!retainer-loyalty-table', CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 92) +
+                menuBtn('Loyalty Info', '!retainer-loyalty-info', CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 92) +
+                menuBtn('Remove', '!retainer-remove --id|' + retainer.id, CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 78) +
+            '</div>' +
+            payMenuRow(retainer.id)
+        ), msg.who, msg.playerid);
+    }
+
+
+    function handlePayMenu(msg, args) {
+        var retainer = getRetainerByRef(msg, args);
+        var employer;
+        var contractPay;
+
+        if (!requireRetainerManage(msg, retainer)) return;
+
+        employer = getCharacterByRef(getAttr(retainer.id, ATTR.EMPLOYER_ID));
+        contractPay = getContractPayOnlyBreakdown(retainer);
+
+        send(box(
+            'Pay Retainer: ' + (retainer.get('name') || 'Retainer'),
+            line('Employer', employer ? esc(employer.get('name')) : 'Unknown') +
+            line('Wage', esc(formatWage(getAttr(retainer.id, ATTR.DAILY_WAGE_SP), getAttr(retainer.id, ATTR.MONTHLY_WAGE_GP)))) +
+            line('Contract amount due', contractPay.totalCp > 0 ? formatCpAsCoins(contractPay.totalCp) : 'nothing currently due') +
+            (contractPay.note ? line('Note', esc(contractPay.note)) : '') +
+            (employer ? line('Employer coins', formatCoinBundle(getCoinBundle(employer.id))) : '') +
+            line('Retainer coins', formatCoinBundle(getCoinBundle(retainer.id))) +
+            '<div style="margin-top:8px;">' +
+                menuBtn('Pay Contract Amount', '!retainer-pay-contract --id|' + retainer.id, CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 126) +
+                menuBtn('Pay Days Worked', '!retainer-pay-prorated --id|' + retainer.id + ' --days|?{Days worked|1}', CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 110) +
+                menuBtn('Share of Treasure', '!retainer-pay-share --id|' + retainer.id + ' --coin|?{Coin Type|Gold,gp|Silver,sp|Copper,cp} --amount|?{Amount|0}', CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 118) +
+            '</div>' +
+            payMenuRow(retainer.id)
+        ), msg.who, msg.playerid);
+    }
+
+    function handlePayContract(msg, args) {
+        var retainer = getRetainerByRef(msg, args);
+        var employer;
+        var pay;
+        var paymentResult;
+        var depositResult;
+        var body;
+
+        if (!requireRetainerManage(msg, retainer)) return;
+
+        employer = getCharacterByRef(getAttr(retainer.id, ATTR.EMPLOYER_ID));
+        if (!employer) {
+            send(box('Pay Contract Amount Failed', 'Employer not found.' + payMenuRow(retainer.id)), msg.who, msg.playerid);
+            return;
+        }
+
+        pay = getContractPayOnlyBreakdown(retainer);
+
+        if (pay.totalCp <= 0) {
+            body = line('Employer', esc(employer.get('name'))) +
+                line('Retainer', esc(retainer.get('name'))) +
+                line('Result', 'No contract amount is currently due.');
+            send(box('Pay Contract Amount', body + payMenuRow(retainer.id)), msg.who, msg.playerid);
+            return;
+        }
+
+        paymentResult = deductCoins(employer, pay.totalCp);
+        if (!paymentResult.ok) {
+            body = line('Employer', esc(employer.get('name'))) +
+                line('Retainer', esc(retainer.get('name'))) +
+                line('Amount needed', formatCpAsCoins(pay.totalCp)) +
+                line('Employer coins', formatCoinBundle(paymentResult.before)) +
+                line('Result', '<span style="color:#ff6666;font-weight:bold;">Not enough coin on employer sheet.</span>');
+            send(box('Pay Contract Amount Failed', body + payMenuRow(retainer.id)), msg.who, msg.playerid);
+            return;
+        }
+
+        depositResult = addCoins(retainer, pay.totalCp);
+        setAttr(retainer.id, ATTR.CONTRACT_PAY_GP, 0);
+
+        body = line('Employer', esc(employer.get('name'))) +
+            line('Retainer', esc(retainer.get('name'))) +
+            line('Paid', formatCpAsCoins(pay.totalCp)) +
+            line('Employer before', formatCoinBundle(paymentResult.before)) +
+            line('Employer after', formatCoinBundle(paymentResult.after)) +
+            line('Retainer before', formatCoinBundle(depositResult.before)) +
+            line('Retainer after', formatCoinBundle(depositResult.after)) +
+            line('Contract pay due now', esc(getAttr(retainer.id, ATTR.CONTRACT_PAY_GP) || '0') + ' gp');
+
+        send(box('Pay Contract Amount Complete', body + payMenuRow(retainer.id)), msg.who, msg.playerid);
+    }
+
+    function handlePayProrated(msg, args) {
+        var retainer = getRetainerByRef(msg, args);
+        var employer;
+        var pay;
+        var paymentResult;
+        var depositResult;
+        var body;
+        var daysWorked;
+
+        if (!requireRetainerManage(msg, retainer)) return;
+
+        employer = getCharacterByRef(getAttr(retainer.id, ATTR.EMPLOYER_ID));
+        if (!employer) {
+            send(box('Pay Days Worked Failed', 'Employer not found.' + payMenuRow(retainer.id)), msg.who, msg.playerid);
+            return;
+        }
+
+        daysWorked = Math.max(0, parseIntSafe(args.days, 0) || 0);
+        pay = getProratedPayBreakdown(retainer, daysWorked);
+
+        if (pay.totalCp <= 0) {
+            body = line('Employer', esc(employer.get('name'))) +
+                line('Retainer', esc(retainer.get('name'))) +
+                line('Days worked', daysWorked) +
+                line('Result', 'No prorated pay is due for that number of days.');
+            send(box('Pay Days Worked', body + payMenuRow(retainer.id)), msg.who, msg.playerid);
+            return;
+        }
+
+        paymentResult = deductCoins(employer, pay.totalCp);
+        if (!paymentResult.ok) {
+            body = line('Employer', esc(employer.get('name'))) +
+                line('Retainer', esc(retainer.get('name'))) +
+                line('Days worked', daysWorked) +
+                line('Rate used', esc(pay.basis)) +
+                line('Amount needed', formatCpAsCoins(pay.totalCp)) +
+                line('Employer coins', formatCoinBundle(paymentResult.before)) +
+                line('Result', '<span style="color:#ff6666;font-weight:bold;">Not enough coin on employer sheet.</span>');
+            send(box('Pay Days Worked Failed', body + payMenuRow(retainer.id)), msg.who, msg.playerid);
+            return;
+        }
+
+        depositResult = addCoins(retainer, pay.totalCp);
+
+        body = line('Employer', esc(employer.get('name'))) +
+            line('Retainer', esc(retainer.get('name'))) +
+            line('Days worked', daysWorked) +
+            line('Rate used', esc(pay.basis)) +
+            line('Per-day value', formatCpAsCoins(pay.perDayCp)) +
+            line('Paid', formatCpAsCoins(pay.totalCp)) +
+            line('Employer before', formatCoinBundle(paymentResult.before)) +
+            line('Employer after', formatCoinBundle(paymentResult.after)) +
+            line('Retainer before', formatCoinBundle(depositResult.before)) +
+            line('Retainer after', formatCoinBundle(depositResult.after));
+
+        send(box('Pay Days Worked Complete', body + payMenuRow(retainer.id)), msg.who, msg.playerid);
+    }
+
+    function handlePayShare(msg, args) {
+        var retainer = getRetainerByRef(msg, args);
+        var employer;
+        var bundle;
+        var coinKey;
+        var amount;
+        var amountCp;
+        var paymentResult;
+        var depositResult;
+        var body;
+
+        if (!requireRetainerManage(msg, retainer)) return;
+
+        employer = getCharacterByRef(getAttr(retainer.id, ATTR.EMPLOYER_ID));
+        if (!employer) {
+            send(box('Share of Treasure Failed', 'Employer not found.' + payMenuRow(retainer.id)), msg.who, msg.playerid);
+            return;
+        }
+
+        if (args.coin !== undefined || args.amount !== undefined) {
+            coinKey = normalizeText(args.coin || 'gp');
+            if (!_.contains(['gp', 'sp', 'cp'], coinKey)) coinKey = 'gp';
+            amount = Math.max(0, parseIntSafe(args.amount, 0) || 0);
+            bundle = bundleFromSingleCoin(coinKey, amount);
+        } else {
+            bundle = {
+                                gp: Math.max(0, parseIntSafe(args.gp, 0) || 0),
+                sp: Math.max(0, parseIntSafe(args.sp, 0) || 0),
+                cp: Math.max(0, parseIntSafe(args.cp, 0) || 0)
+            };
+        }
+        amountCp = totalCpFromBundle(bundle);
+
+        if (amountCp <= 0) {
+            body = line('Employer', esc(employer.get('name'))) +
+                line('Retainer', esc(retainer.get('name'))) +
+                line('Result', 'No treasure amount was entered.');
+            send(box('Share of Treasure', body + payMenuRow(retainer.id)), msg.who, msg.playerid);
+            return;
+        }
+
+        paymentResult = deductCoins(employer, amountCp);
+        if (!paymentResult.ok) {
+            body = line('Employer', esc(employer.get('name'))) +
+                line('Retainer', esc(retainer.get('name'))) +
+                line('Amount needed', formatCoinBundle(bundle)) +
+                line('Employer coins', formatCoinBundle(paymentResult.before)) +
+                line('Result', '<span style="color:#ff6666;font-weight:bold;">Not enough coin on employer sheet.</span>');
+            send(box('Share of Treasure Failed', body + payMenuRow(retainer.id)), msg.who, msg.playerid);
+            return;
+        }
+
+        depositResult = addCoins(retainer, amountCp);
+
+        body = line('Employer', esc(employer.get('name'))) +
+            line('Retainer', esc(retainer.get('name'))) +
+            line('Treasure share', formatCoinBundle(bundle)) +
+            line('Employer before', formatCoinBundle(paymentResult.before)) +
+            line('Employer after', formatCoinBundle(paymentResult.after)) +
+            line('Retainer before', formatCoinBundle(depositResult.before)) +
+            line('Retainer after', formatCoinBundle(depositResult.after));
+
+        send(box('Share of Treasure Complete', body + payMenuRow(retainer.id)), msg.who, msg.playerid);
+    }
+
+    function handlePayAll(msg, args) {
+        var employer = getEmployerCharacter(msg, args);
+        var entries;
+        var payable = [];
+        var totalCp = 0;
+        var paymentResult;
+        var lines = [];
+
+        if (!requireControl(msg, employer, 'employer character')) return;
+
+        entries = _.filter(getRetainerRosterEntries(), function (e) {
+            return entryAttr(e, ATTR.EMPLOYER_ID) === employer.id &&
+                normalizeText(entryAttr(e, ATTR.STATUS)) === 'active';
+        });
+
+        _.each(entries, function (e) {
+            var typeKey = normalizeText(entryAttr(e, ATTR.RETAINER_TYPE));
+            var pay = getContractPayOnlyBreakdown(e.character);
+            if (typeKey === 'npc') return;
+            if (pay.totalCp <= 0) return;
+            payable.push({ entry: e, pay: pay });
+            totalCp += pay.totalCp;
+        });
+
+        if (!payable.length) {
+            send(box('Pay All Retainers',
+                line('Employer', esc(employer.get('name'))) +
+                line('Result', 'No contract amounts are currently due for active paid retainers.')
+            ), msg.who, msg.playerid);
+            return;
+        }
+
+        if (!parseBool(args.confirm, false)) {
+            send(box('Confirm Pay All Retainers',
+                line('Employer', esc(employer.get('name'))) +
+                line('Retainers due pay', payable.length) +
+                line('Total contract amounts', formatCpAsCoins(totalCp)) +
+                line('Employer coins', formatCoinBundle(getCoinBundle(employer.id))) +
+                '<div style="margin-top:6px;color:#ff6666;font-weight:bold;">Are you sure you want to pay all contract amounts due for this PC?</div>' +
+                '<div style="margin-top:8px;">' +
+                    menuBtn('Confirm Pay All', '!retainer-pay-all --pc|' + employer.id + ' --confirm|yes', CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 116) + ' ' +
+                    menuBtn('Cancel', '!retainer-menu', CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 80) +
+                '</div>'
+            ), msg.who, msg.playerid);
+            return;
+        }
+
+        paymentResult = deductCoins(employer, totalCp);
+        if (!paymentResult.ok) {
+            send(box('Pay All Retainers Failed',
+                line('Employer', esc(employer.get('name'))) +
+                line('Retainers due pay', payable.length) +
+                line('Amount needed', formatCpAsCoins(totalCp)) +
+                line('Employer coins', formatCoinBundle(paymentResult.before)) +
+                line('Result', '<span style="color:#ff6666;font-weight:bold;">Not enough coin on employer sheet.</span>')
+            ), msg.who, msg.playerid);
+            return;
+        }
+
+        _.each(payable, function (item) {
+            var retainer = item.entry.character;
+            addCoins(retainer, item.pay.totalCp);
+            setAttr(retainer.id, ATTR.CONTRACT_PAY_GP, 0);
+            lines.push('<li><b>' + esc(retainer.get('name')) + '</b> — ' + formatCpAsCoins(item.pay.totalCp) + '</li>');
+        });
+
+        send(box('Pay All Retainers Complete',
+            line('Employer', esc(employer.get('name'))) +
+            line('Total paid', formatCpAsCoins(totalCp)) +
+            line('Retainers paid', payable.length) +
+            line('Employer before', formatCoinBundle(paymentResult.before)) +
+            line('Employer after', formatCoinBundle(paymentResult.after)) +
+            '<div style="margin-top:6px;"><b>Payments</b><ul style="margin:4px 0 0 18px;">' + lines.join('') + '</ul></div>'
+        ), msg.who, msg.playerid);
+    }
+
+    function handleLoyaltyTable(msg) {
+        var rows = [
+            loyaltyBand(0),
+            loyaltyBand(1),
+            loyaltyBand(26),
+            loyaltyBand(51),
+            loyaltyBand(76),
+            loyaltyBand(101)
+        ];
+        var body = '<div style="margin-bottom:6px;color:#ccc;">Static reference only. This does not add processing load beyond one chat output.</div>' +
+            '<table style="width:100%;border-collapse:collapse;">' +
+            '<tr><th style="text-align:left;border-bottom:1px solid #555;padding:4px 6px;">Adjusted Loyalty Score</th><th style="text-align:left;border-bottom:1px solid #555;padding:4px 6px;">Loyalty</th></tr>' +
+            _.map(rows, function (r) {
+                return '<tr>' +
+                    '<td style="vertical-align:top;border-top:1px solid #333;padding:4px 6px;"><b>' + esc(r.range) + '</b></td>' +
+                    '<td style="vertical-align:top;border-top:1px solid #333;padding:4px 6px;"><b>' + esc(r.label) + '</b> — ' + esc(r.desc) + '</td>' +
+                    '</tr>';
+            }).join('') +
+            '</table>';
+
+        send(box('Loyalty Table', body), msg.who, msg.playerid);
+    }
+
+    function handleLoyaltyInfo(msg) {
+        var body = '' +
+            '<div style="margin-bottom:6px;color:#ccc;">Static reference only. This is just a chat handout and will not materially slow the API.</div>' +
+            '<div style="margin-bottom:6px;"><b>Normal loyalty base</b>: 50%, plus or minus charisma adjustment.</div>' +
+            '<div style="margin-bottom:4px;"><b>Typical Loyalty, Obedience, and Morale Check Situations</b></div>' +
+            '<table style="width:100%;border-collapse:collapse;margin-bottom:8px;">' +
+            '<tr><th style="text-align:left;border-bottom:1px solid #555;padding:4px 6px;">Situation</th><th style="text-align:left;border-bottom:1px solid #555;padding:4px 6px;">Failure result</th></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">offered bribe</td><td style="border-top:1px solid #333;padding:4px 6px;">co-operates</td></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">ordered to testify against liege</td><td style="border-top:1px solid #333;padding:4px 6px;">agrees</td></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">has a chance to steal goods</td><td style="border-top:1px solid #333;padding:4px 6px;">steals</td></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">left alone in possible danger</td><td style="border-top:1px solid #333;padding:4px 6px;">deserts</td></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">abandoned</td><td style="border-top:1px solid #333;padding:4px 6px;">deserts</td></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">ordered into possible danger</td><td style="border-top:1px solid #333;padding:4px 6px;">refuses</td></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">ordered to perform heroic act</td><td style="border-top:1px solid #333;padding:4px 6px;">refuses</td></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">ordered to perform heroic and dangerous act</td><td style="border-top:1px solid #333;padding:4px 6px;">refuses</td></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">ordered to rescue party member(s)</td><td style="border-top:1px solid #333;padding:4px 6px;">refuses</td></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">ordered to rescue liege</td><td style="border-top:1px solid #333;padding:4px 6px;">refuses</td></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">in combat with possibly dangerous foe</td><td style="border-top:1px solid #333;padding:4px 6px;">runs away</td></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">liege incapacitated or slain</td><td style="border-top:1px solid #333;padding:4px 6px;">runs away</td></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">offered surrender terms</td><td style="border-top:1px solid #333;padding:4px 6px;">surrenders</td></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">surrounded by superior foe</td><td style="border-top:1px solid #333;padding:4px 6px;">surrenders</td></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">ordered to use up or diminish own magic item</td><td style="border-top:1px solid #333;padding:4px 6px;">refuses</td></tr>' +
+            '</table>' +
+            '<div style="margin-bottom:4px;"><b>Base loyalty modifiers</b></div>' +
+            '<ul style="margin:4px 0 8px 18px;">' +
+                '<li>associated non-player character: -10%</li>' +
+                '<li>captured and enlisted: -15%</li>' +
+                '<li>henchman: +5%</li>' +
+                '<li>hired mercenary: 0%</li>' +
+                '<li>hired mercenary, short term: -5%</li>' +
+                '<li>slave: -30%</li>' +
+            '</ul>' +
+            '<div style="margin-bottom:4px;"><b>Length of enlistment or association</b></div>' +
+            '<ul style="margin:4px 0 8px 18px;">' +
+                '<li>less than 1 month: -5%</li>' +
+                '<li>less than 1 year: 0%</li>' +
+                '<li>1 to 5 years: +10%</li>' +
+                '<li>more than 5 years: +25%</li>' +
+            '</ul>' +
+            '<div style="margin:0 0 8px 0;color:#ccc;">This includes time between service or how long the player character has been generally known and familiar to the figure(s) in question.</div>' +
+            '<div style="margin-bottom:4px;"><b>Training or status level</b></div>' +
+            '<ul style="margin:4px 0 8px 18px;">' +
+                '<li>untrained or peasant: -25%</li>' +
+                '<li>little training, levied troops: -15%</li>' +
+                '<li>newly recruited regulars: -5%</li>' +
+                '<li>trained regulars: +10%</li>' +
+                '<li>elite, sub-officers, minor officials, expert hireling: +20%</li>' +
+                '<li>guards, officers, major officials, henchmen: +30%</li>' +
+            '</ul>' +
+            '<div style="margin-bottom:4px;"><b>Pay or treasure shared</b></div>' +
+            '<ul style="margin:4px 0 8px 18px;">' +
+                '<li>none: -20%</li>' +
+                '<li>partial, late, or unfair: -10%</li>' +
+                '<li>average: 0%</li>' +
+                '<li>above average, choice shares: +5%</li>' +
+                '<li>exceptional, bonuses, gift items: +10%</li>' +
+            '</ul>' +
+            '<div style="margin:0 0 8px 0;color:#ccc;">Gift items are typically magic items when a henchman is concerned.</div>' +
+            '<div style="margin-bottom:4px;"><b>Discipline and activity</b></div>' +
+            '<ul style="margin:4px 0 8px 18px;">' +
+                '<li>none or one: -10%</li>' +
+                '<li>lax or little: -5%</li>' +
+                '<li>firm and harsh or occasional: 0%</li>' +
+                '<li>firm and fair or often: +10%</li>' +
+            '</ul>' +
+            '<div style="margin-bottom:4px;"><b>General treatment by liege</b></div>' +
+            '<ul style="margin:4px 0 8px 18px;">' +
+                '<li>inhuman and heartless: -25%</li>' +
+                '<li>cruel and domineering: -10%</li>' +
+                '<li>indifferent and uncaring or variable: -5%</li>' +
+                '<li>just and invariable: +10%</li>' +
+                '<li>just, kind, and invariable: +15%</li>' +
+            '</ul>' +
+            '<div style="margin:0 0 8px 0;color:#ccc;">Cruel and domineering applies only when the liege is not present, is incapacitated, or dead. If the liege is near and in power, treat the minus as a plus from fear; otherwise treat it as 0%.</div>' +
+            '<div style="margin-bottom:4px;"><b>Racial preference</b></div>' +
+            '<table style="width:100%;border-collapse:collapse;margin-bottom:8px;">' +
+            '<tr><th style="text-align:left;border-bottom:1px solid #555;padding:4px 6px;">Preference</th><th style="text-align:left;border-bottom:1px solid #555;padding:4px 6px;">Liege</th><th style="text-align:left;border-bottom:1px solid #555;padding:4px 6px;">Associated group</th></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">antipathy</td><td style="border-top:1px solid #333;padding:4px 6px;">-5%</td><td style="border-top:1px solid #333;padding:4px 6px;">-10%</td></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">good will</td><td style="border-top:1px solid #333;padding:4px 6px;">+10%</td><td style="border-top:1px solid #333;padding:4px 6px;">+5%</td></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">hatred</td><td style="border-top:1px solid #333;padding:4px 6px;">-20%</td><td style="border-top:1px solid #333;padding:4px 6px;">-15%</td></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">neutral</td><td style="border-top:1px solid #333;padding:4px 6px;">0%</td><td style="border-top:1px solid #333;padding:4px 6px;">0%</td></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">preferred</td><td style="border-top:1px solid #333;padding:4px 6px;">+20%</td><td style="border-top:1px solid #333;padding:4px 6px;">+15%</td></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">tolerance</td><td style="border-top:1px solid #333;padding:4px 6px;">0%</td><td style="border-top:1px solid #333;padding:4px 6px;">-5%</td></tr>' +
+            '</table>' +
+            '<div style="margin:0 0 8px 0;color:#ccc;">Preference adjustments are cumulative, but for associates count only the most liked or most disliked group.</div>' +
+            '<div style="margin-bottom:4px;"><b>Alignment factors</b></div>' +
+            '<table style="width:100%;border-collapse:collapse;margin-bottom:8px;">' +
+            '<tr><th style="text-align:left;border-bottom:1px solid #555;padding:4px 6px;">Alignment distance</th><th style="text-align:left;border-bottom:1px solid #555;padding:4px 6px;">Liege</th><th style="text-align:left;border-bottom:1px solid #555;padding:4px 6px;">Associated group</th></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">1 place removed</td><td style="border-top:1px solid #333;padding:4px 6px;">0%</td><td style="border-top:1px solid #333;padding:4px 6px;">0%</td></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">2 places removed</td><td style="border-top:1px solid #333;padding:4px 6px;">-15%</td><td style="border-top:1px solid #333;padding:4px 6px;">-5%</td></tr>' +
+            '<tr><td style="border-top:1px solid #333;padding:4px 6px;">3 places removed</td><td style="border-top:1px solid #333;padding:4px 6px;">-35%</td><td style="border-top:1px solid #333;padding:4px 6px;">-20%</td></tr>' +
+            '</table>' +
+            '<div style="margin:0 0 8px 0;color:#ccc;">Examples: lawful evil to lawful neutral = 1 place removed; lawful evil to lawful good = 2 places removed; lawful evil to chaotic good = 3 places removed.</div>' +
+            '<div style="margin-bottom:4px;"><b>Alignment of liege</b></div>' +
+            '<ul style="margin:4px 0 8px 18px;">' +
+                '<li>lawful good: +15%</li>' +
+                '<li>lawful neutral: +10%</li>' +
+                '<li>lawful evil: +5%</li>' +
+                '<li>neutral good: 0%</li>' +
+                '<li>neutral: 0%</li>' +
+                '<li>chaotic good: -5%</li>' +
+                '<li>chaotic neutral: -10%</li>' +
+                '<li>neutral evil: -15%</li>' +
+                '<li>chaotic evil: -20%</li>' +
+            '</ul>' +
+            '<div style="margin-bottom:4px;"><b>Special considerations</b></div>' +
+            '<ul style="margin:4px 0 8px 18px;">' +
+                '<li>killed faithful henchman or hireling in front of witnesses: -40%</li>' +
+                '<li>tortured faithful henchman or hireling in front of witnesses: -30%</li>' +
+                '<li>reputed to have slain faithful henchmen or hirelings, or left them to die: -20%</li>' +
+                '<li>foresworn, oath breaker, or deserter: -15%</li>' +
+                '<li>rumored to have tortured faithful henchmen or hirelings: -10%</li>' +
+                '<li>discharged faithful henchmen or hirelings without cause: -5%</li>' +
+                '<li>given a choice gift or bonus within last 2 months (hireling) or 3 months (henchman): +5%</li>' +
+                '<li>risked life for within last 6 months (hireling) or 1 year (henchman): +10%</li>' +
+                '<li>ransomed or rescued within 1 year: +15%</li>' +
+                '<li>saved life directly or personally: +25%</li>' +
+                '<li>uses and diminishes own magic to benefit the NPC, including spells and cures: +25%</li>' +
+                '<li>returned henchman or hireling from a death-like state, raised or resurrected: +50%</li>' +
+            '</ul>' +
+            '<div style="margin:0 0 8px 0;color:#ccc;">Apply only one penalty and one bonus maximum from special considerations, using the highest in each category.</div>' +
+            '<div style="margin-bottom:4px;"><b>Situation modifiers</b></div>' +
+            '<ul style="margin:4px 0 0 18px;">' +
+                '<li>liege dead or surrounded and outnumbered: -25%</li>' +
+                '<li>liege out of action: -15%</li>' +
+                '<li>each henchman dead or out of action: -5%</li>' +
+                '<li>each hit die or level dead, friendly: -3%</li>' +
+                '<li>each hit die or level alive, enemy: -1%</li>' +
+                '<li>each hit die or level dead, enemy: +1%</li>' +
+                '<li>each hit die or level alive, friendly: +2%</li>' +
+                '<li>each henchman present, in sight, alive: +5%</li>' +
+                '<li>liege present, in sight, alive: +15%</li>' +
+            '</ul>';
+
+        send(box('Loyalty Info', body), msg.who, msg.playerid);
+    }
+
+    function handleReport(msg, args) {
+        var entries = getRetainerRosterEntries();
+        var employer, grouped, keys, sections;
+
+        if (args.pc || args.employer) {
+            employer = getCharacterByRef(args.pc || args.employer);
+            if (!employer) {
+                send('Employer not found.', msg.who, msg.playerid);
+                return;
+            }
+            entries = _.filter(entries, function (e) { return entryAttr(e, ATTR.EMPLOYER_ID) === employer.id; });
+        } else if (!playerIsGM(msg.playerid) && !parseBool(args.all, false)) {
+            entries = _.filter(entries, function (e) { return entryAttr(e, ATTR.EMPLOYER_PLAYER_ID) === msg.playerid; });
+        }
+
+        if (!entries.length) {
+            sendPublic(box('Retainer Report', 'No retainers found.'));
+            return;
+        }
+
+        grouped = {};
+        _.each(entries, function (e) {
+            var employerName = entryAttr(e, ATTR.EMPLOYER_NAME) || 'Unassigned';
+            if (!grouped[employerName]) grouped[employerName] = [];
+            grouped[employerName].push(e);
+        });
+
+        keys = _.keys(grouped).sort();
+
+        sections = _.map(keys, function (employerName) {
+            var group = grouped[employerName];
+            var employerId = entryAttr(group[0], ATTR.EMPLOYER_ID);
+            var employerChar = getCharacterByRef(employerId);
+            var maxHenchmen = employerChar ? getMaximumHenchmen(employerChar) : 0;
+            var currentHenchmen = _.filter(group, function (e) {
+                return normalizeText(entryAttr(e, ATTR.RETAINER_TYPE)) === 'henchman' && normalizeText(entryAttr(e, ATTR.STATUS)) === 'active';
+            }).length;
+
+            var header = '<div style="margin-bottom:2px;"><b>' + esc(employerName) + '</b> — player: ' + esc(getDisplayName(entryAttr(group[0], ATTR.EMPLOYER_PLAYER_ID)));
+            if (maxHenchmen > 0) header += ' — henchmen: ' + currentHenchmen + '/' + maxHenchmen;
+            header += '</div>';
+
+            var items = _.map(_.sortBy(group, function (e) {
+                return (e.character.get('name') || '').toLowerCase();
+            }), function (e) {
+                var cd = entryAttr(e, ATTR.CONTRACT_DAYS);
+                var pp = entryAttr(e, ATTR.PAY_PERIOD);
+                var contractPay = entryAttr(e, ATTR.CONTRACT_PAY_GP);
+                return '<li><b>' + esc(e.character.get('name')) + '</b> — ' +
+                    esc(entryAttr(e, ATTR.RETAINER_TYPE)) +
+                    (entryAttr(e, ATTR.RETAINER_SUBTYPE) ? ' (' + esc(entryAttr(e, ATTR.RETAINER_SUBTYPE)) + ')' : '') +
+                    ' — status: ' + esc(entryAttr(e, ATTR.STATUS)) +
+                    ' — wage: ' + esc(formatWage(entryAttr(e, ATTR.DAILY_WAGE_SP), entryAttr(e, ATTR.MONTHLY_WAGE_GP))) +
+                    (contractPay && contractPay !== '0' ? ' — contract pay due: ' + esc(contractPay) + ' gp' : '') +
+                    ' — share: ' + esc(entryAttr(e, ATTR.TREASURE_SHARE_PCT)) + '%' +
+                    ' — loyalty: ' + esc(entryAttr(e, ATTR.LOYALTY_CURRENT)) +
+                    (cd && String(cd) !== '0' ? ' — ' + esc(cd) + ' day(s)' : '') +
+                    (pp ? ' (' + esc(pp) + ')' : '') +
+                    ' — xp: ' + esc(entryAttr(e, ATTR.RETAINER_XP_MODE) || defaultXpModeForType(entryAttr(e, ATTR.RETAINER_TYPE))) +
+                    (entryAttr(e, ATTR.ASSIGNMENT) ? ' — assignment: ' + esc(entryAttr(e, ATTR.ASSIGNMENT)) : '') +
+                    '</li>';
+            }).join('');
+
+            return '<div style="margin-bottom:8px;">' + header + '<ul style="margin:4px 0 0 18px;">' + items + '</ul></div>';
+        }).join('');
+
+        sendPublic(box('Retainer Report', sections));
+    }
+
+    function handleWages(msg) {
+        var seen = {};
+        var rows = [];
+
+        _.each(_.values(CONFIG.wageTable), function (entry) {
+            var key = entry.label + '|' + (entry.monthlyGp || '') + '|' + (entry.dailySp || '');
+            if (seen[key]) return;
+            seen[key] = true;
+            rows.push('<li><b>' + esc(entry.label) + '</b> — ' + esc(formatWage(entry.dailySp, entry.monthlyGp)) + '</li>');
+        });
+
+        send(box('Occupational Wage Table', '<ul style="margin:4px 0 0 18px;">' + rows.join('') + '</ul>'), msg.who, msg.playerid);
+    }
+
+    function handleSearchCosts(msg) {
+        var body = '' +
+            '<div style="margin-bottom:6px;"><b>Method</b> — <b>Cost</b> — <b>Effectiveness</b></div>' +
+            '<ul style="margin:4px 0 8px 18px;">' +
+                '<li><b>Posting Notices in Public</b> — 50 gp — 10% to 40%</li>' +
+                '<li><b>Hiring a Crier</b> — 10 gp — 1% to 10%</li>' +
+                '<li><b>Hiring Agents to Seek Prospects</b> — 300 gp — 20% to 50%</li>' +
+                '<li><b>Frequenting Inns and Taverns</b> — special — special</li>' +
+            '</ul>' +
+            '<div style="margin-bottom:6px;"><b>Combination Penalty</b>: reduce the effectiveness of <i>each</i> method by 5% when methods are used together.</div>' +
+            '<div style="margin-bottom:6px;"><b>Frequency</b>: each method can be tried only once per month with any hope of success.</div>' +
+            '<div style="margin-bottom:6px;"><b>Inns and Taverns</b>: cost is the price of a round of drinks for the house plus a barkeep fee. For each 10 gp of barkeep fee (50 gp maximum), there is a 1% to 4% chance of reaching a henchman.</div>';
+
+        send(box('Search Costs', body), msg.who, msg.playerid);
+    }
+
+    function handleHenchmanModifiers(msg) {
+        var body = '' +
+            '<div style="margin-bottom:6px;"><b>What affects the hire roll</b></div>' +
+            '<ul style="margin:4px 0 8px 18px;">' +
+                '<li>Initial payment must be at least <b>100 gp per level</b> for a base <b>+25%</b> interest.</li>' +
+                '<li>Each additional <b>100 gp</b> adds <b>+10%</b> interest, to a maximum payment-based interest of <b>55%</b>.</li>' +
+                '<li>Offering <b>quarters and support</b> gives <b>+5%</b>; refusing them gives <b>-25%</b>.</li>' +
+                '<li>Each <b>magic item offered</b> gives <b>+15%</b> interest. This menu uses a simple <b>Yes/No</b> query, so Yes counts as one magic item.</li>' +
+                '<li>The employer\'s <b>reaction adjustment</b> is added to the interest total.</li>' +
+                '<li>The final henchman acceptance chance is capped at <b>95%</b>.</li>' +
+                '<li>Henchman reply delay is <b>2-8 days</b> on the first offer only. Pending rolls do not delay again.</li>' +
+            '</ul>' +
+            '<div style="margin-bottom:6px;"><b>Not currently modeled in the acceptance roll</b></div>' +
+            '<ul style="margin:4px 0 8px 18px;">' +
+                '<li>Specific activity, duties, and position.</li>' +
+                '<li>Division of future magic items.</li>' +
+                '<li>Complete equipment as a numeric modifier. It is tracked as a note/assumption, not a bonus.</li>' +
+            '</ul>' +
+            '<div style="margin-bottom:6px;"><b>Current formula</b>: interest from offer terms + employer reaction adjustment, then capped at 95%.</div>' +
+            '<div style="color:#ccc;">Loyalty is separate. On acceptance, base loyalty starts at 50% plus the employer\'s loyalty adjustment.</div>';
+
+        send(box('Henchman Hire Modifiers', body), msg.who, msg.playerid);
+    }
+
+    function handleHelp(msg) {
+        var body = '' +
+            line('Menu', '<code>!retainer-menu</code>') +
+            line('Recruit market', '<code>!retainer-seek --population|25000 --notices|yes --crier|no --agents|yes --taverns|3 --tavernfee|20</code>') +
+            line('Prepare hireling / expert offer', '<code>!retainer-prepare-standard --name|Name --type|hireling --subtype|linkboy --days|10</code>') +
+            line('Modify retainer', '<code>!retainer-modify --id|CHARACTER_ID --wagepct|-10 --share|5</code>') +
+            line('Add NPC', '<code>!retainer-add --pc|CHARACTER_ID --name|Name --type|npc --classname|Fighter --race|Human --npclevel|1 --status|active --xpmode|none --share|0</code>') +
+            line('Henchman hire modifiers', '<code>!retainer-henchman-modifiers</code>') +
+            line('Remove retainer', '<code>!retainer-remove --id|CHARACTER_ID</code>') +
+            line('Delete candidate', '<code>!retainer-delete-candidate --candidate|C1</code>') +
+            line('Clear candidates', '<code>!retainer-clear-candidates --pc|CHARACTER_ID</code>') +
+            line('Retainer manage menu', '<code>!retainer-manage --id|CHARACTER_ID</code>') +
+            line('Retainer pay menu', '<code>!retainer-pay-menu --id|CHARACTER_ID</code>') +
+            line('Pay contract amount', '<code>!retainer-pay-contract --id|CHARACTER_ID</code>') +
+            line('Pay days worked', '<code>!retainer-pay-prorated --id|CHARACTER_ID --days|3</code>') +
+            line('Loyalty table', '<code>!retainer-loyalty-table</code>') +
+            line('Loyalty info', '<code>!retainer-loyalty-info</code>') +
+            line('Search costs', '<code>!retainer-search-costs</code>') +
+            line('Reset campaign data', '<code>!retainer-reset</code> (GM only)');
+        send(box('RetainerManager Help', body), msg.who, msg.playerid);
+    }
+
+    function handleMenu(msg) {
+        var attrIndex = buildAttrIndex();
+        var entries = getRetainerRosterEntries(attrIndex);
+        var html = '<div style="background:#000;border:1px solid #666;padding:8px;color:#fff;max-width:420px;">';
+        var retainerQuery = buildRetainerRefQuery(msg, attrIndex, 'Retainer');
+        var employerQuery = buildEmployerRefQuery(msg, attrIndex, 'Employer PC');
+        var npcQuery = buildNpcRefQuery(attrIndex, 'Existing NPC');
+        var selectedEmployer = getSelectedCharacter(msg);
+        var clearCandidatesCmd;
+        var employerArg = '';
+        var reactionPct = 0;
+
+        if (selectedEmployer && getAttr(selectedEmployer.id, ATTR.RETAINER_TYPE) !== '') {
+            selectedEmployer = getCharacterByRef(getAttr(selectedEmployer.id, ATTR.EMPLOYER_ID)) || selectedEmployer;
+        }
+        if (selectedEmployer && !canPlayerControlCharacter(msg.playerid, selectedEmployer) && !playerIsGM(msg.playerid)) {
+            selectedEmployer = null;
+        }
+        if (selectedEmployer) {
+            employerArg = ' --pc|' + selectedEmployer.id;
+            reactionPct = getReactionBonusPct(selectedEmployer);
+        }
+
+        clearCandidatesCmd = buildClearCandidatesCommand(selectedEmployer ? { pc: selectedEmployer.id } : null);
+
+        var addNameQuery = randomNameQuery('Name');
+        var hirelingSubtypeQuery = '?{Hireling Type|Bearer/Porter (1 gp/mo),bearer|Carpenter (2 gp/mo),carpenter|Leather Worker (3 gp/mo),leatherworker|Limner (10 gp/mo),limner|Linkboy (1 gp/mo),linkboy|Mason (3 gp/mo),mason|Pack Handler (3 gp/mo),packhandler|Tailor (3 gp/mo),tailor|Teamster (5 gp/mo),teamster|Valet/Lackey (5 gp/mo),valet}';
+        var expertSubtypeQuery = '?{Expert Type|Alchemist (300 gp/mo),alchemist|Armorer (100 gp/mo),armorer|Blacksmith (30 gp/mo),blacksmith|Bowyer-Arrowsmith-Fletcher (100 gp/mo),bowyerarrowsmithfletcher|Engineer-Architect (100 gp/mo),engineerarchitect|Engineer-Artillerist (150 gp/mo),engineerartillerist|Engineer-Sapper/Miner (150 gp/mo),engineersapperminer|Jeweler-Gemcutter (100 gp/mo),jewelergemcutter|Mercenary Soldier (Special),mercenarysoldier|Scribe (15 gp/mo),scribe|Swordsmith-Daggersmith (100 gp/mo),swordsmithdaggersmith|Sage (Special),sage}';
+        var henchmanSubtypeQuery = '?{Henchman Class|Fighter,fighter|Cleric,cleric|Magic-User,magic-user|Thief,thief|Ranger,ranger|Paladin,paladin|Druid,druid|Illusionist,illusionist|Assassin,assassin|Monk,monk}';
+
+        html += '<div style="font-weight:bold;font-size:18px;color:#fff;margin-bottom:6px;">1e AD&amp;D Retainers</div>';
+
+        if (selectedEmployer) {
+            html += '<div style="color:#ccc;font-size:12px;margin-bottom:6px;">Employer: <b>' +
+                esc(selectedEmployer.get('name')) +
+                '</b> | Reaction modifier: ' + (reactionPct >= 0 ? '+' : '') + reactionPct + '%</div>';
+        } else {
+            html += '<div style="color:#ccc;font-size:12px;margin-bottom:6px;">Open the menu with an employer token selected to see reaction-adjusted hireling bonus choices.</div>';
+        }
+
+        html += buildActiveSummaryHtml(msg, entries);
+
+        html += menuSection('1. Recruitment', [
+            menuBtn(
+                'Seek Market',
+                '!retainer-seek' + employerArg + ' ' +
+                '--population|?{Population|25000} ' +
+                '--notices|?{Posting notices? (50 gp)|No,no|Yes,yes} ' +
+                '--crier|?{Hire a crier? (10 gp)|No,no|Yes,yes} ' +
+                '--agents|?{Hire agents? (300 gp)|No,no|Yes,yes} ' +
+                '--taverns|?{Inns/taverns worked (0-10)|0} ' +
+                '--tavernfee|?{GP fee per tavern (10-50 gp each)|20}',
+                CONFIG.sectionColors.recruit.bg,
+                CONFIG.sectionColors.recruit.border,
+                102
+            ),
+            dangerBtn('Search Costs', '!retainer-search-costs', 94),
+            menuBtn('Candidates', '!retainer-candidates' + employerArg, CONFIG.sectionColors.recruit.bg, CONFIG.sectionColors.recruit.border, 88),
+            removeCandidatesBtn(clearCandidatesCmd, 128),
+            menuBtn('Pending', '!retainer-pending' + employerArg, CONFIG.sectionColors.recruit.bg, CONFIG.sectionColors.recruit.border, 76)
+        ]);
+
+        html += menuSection('2. Add Directly', [
+            menuBtn(
+                'Hireling',
+                '!retainer-prepare-standard' + employerArg +
+                ' --name|' + addNameQuery +
+                ' --type|hireling' +
+                ' --subtype|' + hirelingSubtypeQuery +
+                ' --days|?{Days of service|7}' +
+                ' --status|active --xpmode|none',
+                CONFIG.sectionColors.add.bg,
+                CONFIG.sectionColors.add.border,
+                88
+            ),
+            menuBtn(
+                'Expert',
+                '!retainer-prepare-standard' + employerArg +
+                ' --name|' + addNameQuery +
+                ' --type|expert' +
+                ' --subtype|' + expertSubtypeQuery +
+                ' --monthlygp|?{Monthly gp override (0 = table rate)|0}' +
+                ' --days|?{Days of service|7}' +
+                ' --status|active --xpmode|none',
+                CONFIG.sectionColors.add.bg,
+                CONFIG.sectionColors.add.border,
+                88
+            ),
+            menuBtn(
+                'Henchman',
+                '!retainer-add' + employerArg +
+                ' --name|' + addNameQuery +
+                ' --type|henchman --directoffer|yes' +
+                ' --subtype|' + henchmanSubtypeQuery +
+                ' --race|?{Race|Human}' +
+                ' --npclevel|?{Level|1}' +
+                ' --initial|?{Initial gp|100}' +
+                ' --share|?{Share %|10}' +
+                ' --quarters|?{Quarters|Yes,yes|No,no}' +
+                ' --magicitems|?{Magic item offered?|No,0|Yes,1}' +
+                ' --status|active --xpmode|half',
+                CONFIG.sectionColors.add.bg,
+                CONFIG.sectionColors.add.border,
+                88
+            ),
+            menuBtn(
+                'Add NPC',
+                '!retainer-add' + employerArg +
+                ' --name|' + addNameQuery +
+                ' --type|npc' +
+                ' --classname|?{Class|None,none|Fighter,fighter|Cleric,cleric|Magic-User,magic-user|Thief,thief|Ranger,ranger|Paladin,paladin|Druid,druid|Illusionist,illusionist|Assassin,assassin|Monk,monk}' +
+                ' --race|?{Race|Human}' +
+                ' --npclevel|?{Level|1}' +
+                ' --status|active --xpmode|none --share|0',
+                CONFIG.sectionColors.add.bg,
+                CONFIG.sectionColors.add.border,
+                88
+            )
+        ]);
+
+        html += menuSection('3. Reports / Reference', [
+            menuBtn('My Report', '!retainer-my-report', CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 86),
+            menuBtn('All Report', '!retainer-report --all|yes', CONFIG.sectionColors.manage.bg, CONFIG.sectionColors.manage.border, 86),
+            menuBtn('Wage Table', '!retainer-wages', CONFIG.sectionColors.ref.bg, CONFIG.sectionColors.ref.border, 86),
+            menuBtn('Henchman Mods', '!retainer-henchman-modifiers', CONFIG.sectionColors.ref.bg, CONFIG.sectionColors.ref.border, 106),
+            menuBtn('Loyalty Table', '!retainer-loyalty-table', CONFIG.sectionColors.ref.bg, CONFIG.sectionColors.ref.border, 94),
+            menuBtn('Loyalty Info', '!retainer-loyalty-info', CONFIG.sectionColors.ref.bg, CONFIG.sectionColors.ref.border, 90),
+            menuBtn('Help', '!retainer-help', CONFIG.sectionColors.ref.bg, CONFIG.sectionColors.ref.border, 76)
+        ]);
+
+        if (playerIsGM(msg.playerid)) {
+            html += menuSection('4. GM Only', [
+                menuBtn('New Campaign', '!retainer-reset', CONFIG.sectionColors.recruit.bg, CONFIG.sectionColors.recruit.border, 110)
+            ]);
+        }
+
+        html += '</div>';
+        send(html, msg.who, msg.playerid);
+    }
+
+    function handleInput(msg) {
+        if (msg.type !== 'api') return;
+        if (!msg.content || msg.content.indexOf('!retainer') !== 0) return;
+
+        var command = msg.content.split(/\s+/)[0];
+        var args = parseArgs(msg.content);
+
+        switch (command) {
+            case '!retainer-menu': handleMenu(msg); break;
+            case '!retainer-help': handleHelp(msg); break;
+            case '!retainer-seek': handleSeek(msg, args); break;
+            case '!retainer-candidates': handleCandidates(msg, args); break;
+            case '!retainer-accept': handleAccept(msg, args); break;
+            case '!retainer-offer': handleOffer(msg, args); break;
+            case '!retainer-add-token-npc': handleAddTokenNpc(msg, args); break;
+            case '!retainer-add': handleAdd(msg, args); break;
+            case '!retainer-prepare-standard': handlePrepareStandard(msg, args); break;
+            case '!retainer-pending': handlePending(msg, args); break;
+            case '!retainer-resolve': handleResolve(msg, args); break;
+            case '!retainer-wages': handleWages(msg); break;
+            case '!retainer-search-costs': handleSearchCosts(msg); break;
+            case '!retainer-henchman-modifiers': handleHenchmanModifiers(msg); break;
+            case '!retainer-loyalty-table': handleLoyaltyTable(msg); break;
+            case '!retainer-loyalty-info': handleLoyaltyInfo(msg); break;
+            case '!retainer-pay-menu': handlePayMenu(msg, args); break;
+            case '!retainer-pay-normal': handlePayContract(msg, args); break;
+            case '!retainer-pay-contract': handlePayContract(msg, args); break;
+            case '!retainer-pay-prorated': handlePayProrated(msg, args); break;
+            case '!retainer-pay-share': handlePayShare(msg, args); break;
+            case '!retainer-extend-contract': handleExtendContract(msg, args); break;
+            case '!retainer-pay-all': handlePayAll(msg, args); break;
+            case '!retainer-modify': handleModify(msg, args); break;
+            case '!retainer-remove': handleRemove(msg, args); break;
+            case '!retainer-delete-candidate': handleDeleteCandidate(msg, args); break;
+            case '!retainer-clear-candidates': handleClearCandidates(msg, args); break;
+            case '!retainer-reset': handleReset(msg, args); break;
+            case '!retainer-manage': handleManageMenu(msg, args); break;
+            case '!retainer-report':
+            case '!retainer-my-report': handleReport(msg, args); break;
+            default: handleHelp(msg); break;
+        }
+    }
+
+    function checkInstall() {
+        if (!state[STATE]) {
+            state[STATE] = {
+                version: VERSION,
+                candidates: {},
+                nextCandidateId: 1,
+                pendingOffers: {},
+                nextPendingId: 1,
+                marketOptionsByEmployer: {}
+            };
+        } else {
+            state[STATE].candidates = state[STATE].candidates || {};
+            state[STATE].nextCandidateId = state[STATE].nextCandidateId || 1;
+            state[STATE].pendingOffers = state[STATE].pendingOffers || {};
+            state[STATE].nextPendingId = state[STATE].nextPendingId || 1;
+            state[STATE].marketOptionsByEmployer = state[STATE].marketOptionsByEmployer || {};
+            state[STATE].version = VERSION;
+        }
+        log(SCRIPT + ' v' + VERSION + ' ready.');
+    }
+
+    function registerEventHandlers() {
+        on('chat:message', handleInput);
+    }
+
+    return {
+        CheckInstall: checkInstall,
+        RegisterEventHandlers: registerEventHandlers
+    };
+}());
+
+on('ready', function () {
+    'use strict';
+    RetainerManager.CheckInstall();
+    RetainerManager.RegisterEventHandlers();
+});
